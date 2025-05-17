@@ -10,14 +10,14 @@ import React, {
 export type Course = {
   id: string;
   name: string;
-  grade?: string;
+  grade?: number;
 };
 
 type CoursesContextType = {
   courses: Course[];
   addCourse: (course: Omit<Course, "id">) => void;
   removeCourse: (id: string) => void;
-  setCourseGrade: (id: string, grade: string) => void;
+  setCourseGrade: (id: string, grade: string | number) => void;
 };
 
 const STORAGE_KEY = "courses";
@@ -35,8 +35,14 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((data) => {
-      if (data) setCourses(JSON.parse(data));
-      else
+      if (data) {
+        const parsedCourses = JSON.parse(data);
+        const coursesWithNumericGrades = parsedCourses.map((c: Course) => ({
+          ...c,
+          grade: c.grade !== undefined ? Number(c.grade) : undefined,
+        }));
+        setCourses(coursesWithNumericGrades);
+      } else
         setCourses([
           { id: "1", name: "Math" },
           { id: "2", name: "Science" },
@@ -59,8 +65,16 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     setCourses((prev) => prev.filter((c) => c.id !== id));
   }
 
-  function setCourseGrade(id: string, grade: string) {
-    setCourses((prev) => prev.map((c) => (c.id === id ? { ...c, grade } : c)));
+  function setCourseGrade(id: string, grade: string | number) {
+    const numericGrade = typeof grade === "string" ? Number(grade) : grade;
+
+    setCourses((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? { ...c, grade: isNaN(numericGrade) ? undefined : numericGrade }
+          : c
+      )
+    );
   }
 
   return (

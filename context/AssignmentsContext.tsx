@@ -13,7 +13,7 @@ export type Assignment = {
   dueDate: string;
   description: string;
   courseId: string;
-  grade?: string;
+  grade?: number;
   completed?: boolean;
 };
 
@@ -21,7 +21,7 @@ type AssignmentsContextType = {
   assignments: Assignment[];
   addAssignment: (a: Omit<Assignment, "id">) => void;
   removeAssignment: (id: string) => void;
-  setAssignmentGrade: (id: string, grade: string) => void;
+  setAssignmentGrade: (id: string, grade: string | number) => void;
   toggleAssignmentCompleted: (id: string) => void;
   updateAssignment: (
     id: string,
@@ -47,7 +47,16 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((data) => {
-      if (data) setAssignments(JSON.parse(data));
+      if (data) {
+        const parsedAssignments = JSON.parse(data);
+        const assignmentsWithNumericGrades = parsedAssignments.map(
+          (a: Assignment) => ({
+            ...a,
+            grade: a.grade !== undefined ? Number(a.grade) : undefined,
+          })
+        );
+        setAssignments(assignmentsWithNumericGrades);
+      }
     });
   }, []);
 
@@ -66,7 +75,9 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     setAssignments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  function setAssignmentGrade(id: string, grade: string) {
+  function setAssignmentGrade(id: string, grade: string | number) {
+    const numericGrade = typeof grade === "string" ? Number(grade) : grade;
+
     setAssignments((prev) =>
       prev.map((a) => {
         if (a.id === id) {
@@ -74,7 +85,10 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
           const now = new Date();
 
           if (dueDate <= now || a.completed) {
-            return { ...a, grade };
+            return {
+              ...a,
+              grade: isNaN(numericGrade) ? undefined : numericGrade,
+            };
           } else {
             console.warn("Cannot grade future assignments");
             return a;
@@ -92,6 +106,13 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   }
 
   function updateAssignment(id: string, updatedData: Partial<Assignment>) {
+    if (
+      updatedData.grade !== undefined &&
+      typeof updatedData.grade === "string"
+    ) {
+      updatedData.grade = Number(updatedData.grade);
+    }
+
     setAssignments((prev) =>
       prev.map((a) => (a.id === id ? { ...a, ...updatedData } : a))
     );

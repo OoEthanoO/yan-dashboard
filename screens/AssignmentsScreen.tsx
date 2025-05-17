@@ -1,7 +1,9 @@
 import { useStudySessions } from "@/context/StudySessionsContext";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useState } from "react";
 import {
+  Dimensions,
   FlatList,
   Modal,
   Platform,
@@ -55,6 +57,9 @@ export default function AssignmentsScreen() {
 
   const [aiSuggestions, setAiSuggestions] = useState<string | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [lastSuggestionTime, setLastSuggestionTime] = useState<string | null>(
+    null
+  );
 
   const [activeTab, setActiveTab] = useState("assignments");
 
@@ -70,6 +75,8 @@ export default function AssignmentsScreen() {
   const [datePickerMode, setDatePickerMode] = useState<
     "add" | "edit" | "study"
   >("add");
+  const [sortMethod, setSortMethod] = useState<string>("dueDate-asc");
+  const [showSortOptions, setShowSortOptions] = useState(false);
 
   const isIOS = Platform.OS === "ios";
 
@@ -91,6 +98,41 @@ export default function AssignmentsScreen() {
     }
   };
 
+  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
+
+  useEffect(() => {
+    const checkScreenWidth = () => {
+      const screenWidth = Dimensions.get("window").width;
+      setIsNarrowScreen(screenWidth < 600);
+    };
+
+    checkScreenWidth();
+
+    const subscription = Dimensions.addEventListener(
+      "change",
+      checkScreenWidth
+    );
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    async function loadSavedSuggestions() {
+      try {
+        const savedData = await AsyncStorage.getItem("aiSuggestions");
+        if (savedData) {
+          const { suggestions, timestamp } = JSON.parse(savedData);
+          setAiSuggestions(suggestions);
+          setLastSuggestionTime(timestamp);
+        }
+      } catch (e) {
+        console.error("Failed to load saved suggestions:", e);
+      }
+    }
+
+    loadSavedSuggestions();
+  }, []);
+
   async function fetchAISuggestions() {
     setLoadingSuggestions(true);
     try {
@@ -104,16 +146,23 @@ export default function AssignmentsScreen() {
         }),
       });
       const data = await res.json();
+      const timestamp = new Date().toISOString();
+
       setAiSuggestions(data.suggestions);
+      setLastSuggestionTime(timestamp);
+
+      await AsyncStorage.setItem(
+        "aiSuggestions",
+        JSON.stringify({
+          suggestions: data.suggestions,
+          timestamp,
+        })
+      );
     } catch (e) {
       setAiSuggestions("Could not fetch AI suggestions.");
     }
     setLoadingSuggestions(false);
   }
-
-  useEffect(() => {
-    fetchAISuggestions();
-  }, [assignments, courses, sessions]);
 
   function openStudyModal(courseId: string) {
     setStudyCourseId(courseId);
@@ -209,14 +258,16 @@ export default function AssignmentsScreen() {
                 size={18}
                 color={activeTab === "assignments" ? "#3b82f6" : "#888"}
               />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "assignments" && styles.activeTabText,
-                ]}
-              >
-                Assignments
-              </Text>
+              {!isNarrowScreen && (
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "assignments" && styles.activeTabText,
+                  ]}
+                >
+                  Assignments
+                </Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === "study" && styles.activeTab]}
@@ -227,14 +278,16 @@ export default function AssignmentsScreen() {
                 size={18}
                 color={activeTab === "study" ? "#3b82f6" : "#888"}
               />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "study" && styles.activeTabText,
-                ]}
-              >
-                Study Log
-              </Text>
+              {!isNarrowScreen && (
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "study" && styles.activeTabText,
+                  ]}
+                >
+                  Study Log
+                </Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === "courses" && styles.activeTab]}
@@ -245,14 +298,16 @@ export default function AssignmentsScreen() {
                 size={18}
                 color={activeTab === "courses" ? "#3b82f6" : "#888"}
               />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "courses" && styles.activeTabText,
-                ]}
-              >
-                Courses
-              </Text>
+              {!isNarrowScreen && (
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "courses" && styles.activeTabText,
+                  ]}
+                >
+                  Courses
+                </Text>
+              )}
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, activeTab === "insights" && styles.activeTab]}
@@ -263,14 +318,16 @@ export default function AssignmentsScreen() {
                 size={18}
                 color={activeTab === "insights" ? "#3b82f6" : "#888"}
               />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "insights" && styles.activeTabText,
-                ]}
-              >
-                AI Insights
-              </Text>
+              {!isNarrowScreen && (
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "insights" && styles.activeTabText,
+                  ]}
+                >
+                  AI Insights
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -414,14 +471,18 @@ export default function AssignmentsScreen() {
                         {editingCourseId === item.id ? (
                           <>
                             <TextInput
-                              value={courseGradeInput}
+                              value={
+                                courseGradeInput !== undefined
+                                  ? String(courseGradeInput)
+                                  : ""
+                              }
                               onChangeText={setCourseGradeInput}
                               style={[
                                 styles.input,
                                 { width: 60, marginBottom: 0 },
                               ]}
                               placeholder="e.g. 90"
-                              keyboardType="default"
+                              keyboardType="numeric"
                             />
                             <TouchableOpacity
                               onPress={() => {
@@ -444,7 +505,11 @@ export default function AssignmentsScreen() {
                             <TouchableOpacity
                               onPress={() => {
                                 setEditingCourseId(item.id);
-                                setCourseGradeInput(item.grade ?? "");
+                                setCourseGradeInput(
+                                  item.grade !== undefined
+                                    ? String(item.grade)
+                                    : ""
+                                );
                               }}
                             >
                               <Ionicons
@@ -550,24 +615,203 @@ export default function AssignmentsScreen() {
     </SafeAreaView>
   );
 
+  function sortAssignments(assignments: Assignment[]) {
+    return [...assignments].sort((a, b) => {
+      switch (sortMethod) {
+        case "dueDate-asc":
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        case "dueDate-desc":
+          return new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime();
+        case "course":
+          const courseA = getCourseName(a.courseId);
+          const courseB = getCourseName(b.courseId);
+          return courseA.localeCompare(courseB);
+        case "title":
+          return a.title.localeCompare(b.title);
+        case "status":
+          return a.completed === b.completed ? 0 : a.completed ? 1 : -1;
+        default:
+          return 0;
+      }
+    });
+  }
+
   function renderAssignmentsTab() {
+    const sortedAssignments = sortAssignments(assignments);
+
     return (
-      <FlatList
-        data={assignments}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ gap: 12, paddingBottom: 80, paddingTop: 10 }}
-        renderItem={({ item }) => <AssignmentCard item={item} />}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyStateText}>No assignments yet</Text>
-            <Text style={styles.emptyStateSubtext}>
-              Tap + to add your first assignment
+      <>
+        <View style={styles.sortContainer}>
+          <TouchableOpacity
+            style={styles.sortButton}
+            onPress={() => setShowSortOptions(!showSortOptions)}
+          >
+            <Ionicons name="funnel-outline" size={18} color="#3b82f6" />
+            <Text style={styles.sortButtonText}>
+              Sort by: {getSortLabel(sortMethod)}
             </Text>
-          </View>
-        }
-      />
+            <Ionicons
+              name={showSortOptions ? "chevron-up" : "chevron-down"}
+              size={16}
+              color="#3b82f6"
+            />
+          </TouchableOpacity>
+
+          {showSortOptions && (
+            <View style={styles.sortOptionsContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.sortOption,
+                  sortMethod === "dueDate-asc" && styles.activeSortOption,
+                ]}
+                onPress={() => {
+                  setSortMethod("dueDate-asc");
+                  setShowSortOptions(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    sortMethod === "dueDate-asc" && styles.activeSortOptionText,
+                  ]}
+                >
+                  Due Date (Earliest First)
+                </Text>
+                {sortMethod === "dueDate-asc" && (
+                  <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sortOption,
+                  sortMethod === "dueDate-desc" && styles.activeSortOption,
+                ]}
+                onPress={() => {
+                  setSortMethod("dueDate-desc");
+                  setShowSortOptions(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    sortMethod === "dueDate-desc" &&
+                      styles.activeSortOptionText,
+                  ]}
+                >
+                  Due Date (Latest First)
+                </Text>
+                {sortMethod === "dueDate-desc" && (
+                  <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sortOption,
+                  sortMethod === "course" && styles.activeSortOption,
+                ]}
+                onPress={() => {
+                  setSortMethod("course");
+                  setShowSortOptions(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    sortMethod === "course" && styles.activeSortOptionText,
+                  ]}
+                >
+                  Course
+                </Text>
+                {sortMethod === "course" && (
+                  <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sortOption,
+                  sortMethod === "title" && styles.activeSortOption,
+                ]}
+                onPress={() => {
+                  setSortMethod("title");
+                  setShowSortOptions(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    sortMethod === "title" && styles.activeSortOptionText,
+                  ]}
+                >
+                  Title (A-Z)
+                </Text>
+                {sortMethod === "title" && (
+                  <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sortOption,
+                  sortMethod === "status" && styles.activeSortOption,
+                ]}
+                onPress={() => {
+                  setSortMethod("status");
+                  setShowSortOptions(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    sortMethod === "status" && styles.activeSortOptionText,
+                  ]}
+                >
+                  Completion Status
+                </Text>
+                {sortMethod === "status" && (
+                  <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <FlatList
+          data={sortedAssignments}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ gap: 12, paddingBottom: 80, paddingTop: 10 }}
+          renderItem={({ item }) => <AssignmentCard item={item} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="document-text-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyStateText}>No assignments yet</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Tap + to add your first assignment
+              </Text>
+            </View>
+          }
+        />
+      </>
     );
+  }
+
+  function getSortLabel(method: string): string {
+    switch (method) {
+      case "dueDate-asc":
+        return "Due Date (Earliest)";
+      case "dueDate-desc":
+        return "Due Date (Latest)";
+      case "course":
+        return "Course";
+      case "title":
+        return "Title";
+      case "status":
+        return "Status";
+      default:
+        return "Due Date";
+    }
   }
 
   function AssignmentCard({ item }: { item: Assignment }) {
@@ -621,7 +865,7 @@ export default function AssignmentsScreen() {
             />
             <Text style={styles.metaText}>{getCourseName(item.courseId)}</Text>
           </View>
-          {item.grade && (
+          {item.grade !== undefined && (
             <View style={styles.metaItem}>
               <Ionicons
                 name="ribbon"
@@ -673,7 +917,9 @@ export default function AssignmentsScreen() {
                 style={styles.iconButton}
                 onPress={() => {
                   setEditingAssignmentId(item.id);
-                  setAssignmentGradeInput(item.grade ?? "");
+                  setAssignmentGradeInput(
+                    item.grade !== undefined ? String(item.grade) : ""
+                  );
                 }}
               >
                 <Ionicons name="create-outline" size={18} color="#3b82f6" />
@@ -743,7 +989,11 @@ export default function AssignmentsScreen() {
             <Text style={styles.inlineFormTitle}>Update Grade</Text>
             <View style={styles.gradeInputRow}>
               <TextInput
-                value={assignmentGradeInput}
+                value={
+                  assignmentGradeInput !== undefined
+                    ? String(assignmentGradeInput)
+                    : ""
+                }
                 onChangeText={setAssignmentGradeInput}
                 style={styles.gradeInput}
                 placeholder="95"
@@ -855,31 +1105,36 @@ export default function AssignmentsScreen() {
                   <Text style={styles.sessionCardCourse}>
                     {getCourseName(session.courseId)}
                   </Text>
-                  <Text style={styles.sessionCardDate}>
-                    {formatDate(session.date)}
-                  </Text>
                 </View>
                 <View style={styles.sessionCardDetails}>
-                  <View style={styles.sessionCardTime}>
-                    <Ionicons name="time" size={16} color="#666" />
-                    <Text style={styles.sessionCardDuration}>
-                      {session.durationMinutes} minutes
+                  <View style={styles.sessionCardRow}>
+                    <View style={styles.sessionCardTime}>
+                      <Ionicons name="time" size={16} color="#666" />
+                      <Text style={styles.sessionCardDuration}>
+                        {session.durationMinutes} minutes
+                      </Text>
+                    </View>
+                    <Text style={styles.sessionCardDate}>
+                      {formatDate(session.date)}
                     </Text>
                   </View>
                   {session.notes && (
                     <Text style={styles.sessionCardNotes}>{session.notes}</Text>
                   )}
                 </View>
-                <TouchableOpacity
-                  style={styles.sessionDeleteButton}
-                  onPress={() => removeSession(session.id)}
-                >
-                  <Ionicons
-                    name="trash-bin-outline"
-                    size={18}
-                    color="#ff6b6b"
-                  />
-                </TouchableOpacity>
+                <View style={styles.sessionCardFooter}>
+                  <TouchableOpacity
+                    style={styles.sessionDeleteButton}
+                    onPress={() => removeSession(session.id)}
+                  >
+                    <Ionicons
+                      name="trash-bin-outline"
+                      size={18}
+                      color="#ff6b6b"
+                    />
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
         )}
@@ -957,7 +1212,11 @@ export default function AssignmentsScreen() {
                     {editingCourseId === item.id ? (
                       <View style={styles.courseGradeEditRow}>
                         <TextInput
-                          value={courseGradeInput}
+                          value={
+                            courseGradeInput !== undefined
+                              ? String(courseGradeInput)
+                              : ""
+                          }
                           onChangeText={setCourseGradeInput}
                           style={styles.courseGradeInput}
                           keyboardType="numeric"
@@ -982,11 +1241,15 @@ export default function AssignmentsScreen() {
                         style={styles.courseGradeDisplay}
                         onPress={() => {
                           setEditingCourseId(item.id);
-                          setCourseGradeInput(item.grade ?? "");
+                          setCourseGradeInput(
+                            item.grade !== undefined ? String(item.grade) : ""
+                          );
                         }}
                       >
                         <Text style={styles.courseGradeText}>
-                          {item.grade ? `${item.grade}%` : "Set Grade"}
+                          {item.grade !== undefined
+                            ? `${item.grade}%`
+                            : "Set Grade"}
                         </Text>
                         <Ionicons
                           name="create-outline"
@@ -1023,6 +1286,19 @@ export default function AssignmentsScreen() {
     );
   }
 
+  function formatTimestamp(timestamp: string | null): string {
+    if (!timestamp) return "Never generated";
+
+    const date = new Date(timestamp);
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
   function renderInsightsTab() {
     return (
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
@@ -1032,23 +1308,42 @@ export default function AssignmentsScreen() {
             <Text style={styles.insightsTitle}>AI Productivity Insights</Text>
           </View>
 
+          <View style={styles.lastGeneratedContainer}>
+            <View style={styles.lastGeneratedText}>
+              Last generated: {formatTimestamp(lastSuggestionTime)}
+            </View>
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={fetchAISuggestions}
+              disabled={loadingSuggestions}
+            >
+              <Ionicons
+                name={loadingSuggestions ? "hourglass" : "refresh"}
+                size={18}
+                color="#fff"
+              />
+              <Text style={styles.refreshButtonText}>
+                {loadingSuggestions ? "Generating..." : "Generate New Insights"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.insightsBody}>
             {loadingSuggestions ? (
               <View style={styles.loadingContainer}>
                 <Text style={styles.loadingText}>Analyzing your data...</Text>
               </View>
+            ) : !aiSuggestions ? (
+              <View style={styles.emptyInsights}>
+                <Text style={styles.emptyInsightsText}>
+                  No insights yet. Click "Generate New Insights" to get
+                  personalized suggestions.
+                </Text>
+              </View>
             ) : (
               <Text style={styles.insightsText}>{aiSuggestions}</Text>
             )}
           </View>
-
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={fetchAISuggestions}
-          >
-            <Ionicons name="refresh" size={18} color="#3b82f6" />
-            <Text style={styles.refreshButtonText}>Refresh Insights</Text>
-          </TouchableOpacity>
         </View>
 
         <View style={styles.insightsDashboard}>
@@ -1515,9 +1810,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   sessionCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 12,
   },
   sessionCardCourse: {
     fontSize: 16,
@@ -1526,7 +1819,8 @@ const styles = StyleSheet.create({
   },
   sessionCardDate: {
     fontSize: 14,
-    color: "#4b5563",
+    color: "#64748b",
+    fontWeight: "500",
   },
   sessionCardDetails: {
     gap: 6,
@@ -1546,9 +1840,12 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   sessionDeleteButton: {
-    position: "absolute",
-    top: 16,
-    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-end",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
   },
 
   courseHeader: {
@@ -1703,7 +2000,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fafc",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
   },
   insightsText: {
     fontSize: 15,
@@ -1722,13 +2018,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 8,
+    backgroundColor: "#3b82f6",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
   },
   refreshButtonText: {
+    color: "#fff",
+    fontWeight: "600",
     fontSize: 14,
-    fontWeight: "500",
-    color: "#3b82f6",
   },
   insightsDashboard: {
     padding: 16,
@@ -1931,5 +2230,97 @@ const styles = StyleSheet.create({
   inlineDatePicker: {
     width: "100%",
     height: 50,
+  },
+  lastGeneratedContainer: {
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  lastGeneratedText: {
+    fontSize: 13,
+    color: "#64748b",
+    marginBottom: 10,
+    fontStyle: "italic",
+  },
+  emptyInsights: {
+    padding: 24,
+    alignItems: "center",
+  },
+  emptyInsightsText: {
+    textAlign: "center",
+    color: "#64748b",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  sessionCardRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  sessionCardFooter: {
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    marginTop: 12,
+    paddingTop: 12,
+  },
+  deleteButtonText: {
+    fontSize: 13,
+    color: "#ff6b6b",
+    fontWeight: "500",
+  },
+  sortContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    position: "relative",
+    zIndex: 10,
+  },
+  sortButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e0f2fe",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  sortButtonText: {
+    color: "#3b82f6",
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
+  },
+  sortOptionsContainer: {
+    position: "absolute",
+    top: 50,
+    left: 16,
+    right: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: 100,
+    padding: 8,
+  },
+  sortOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  activeSortOption: {
+    backgroundColor: "#f0f9ff",
+  },
+  sortOptionText: {
+    fontSize: 15,
+    color: "#4b5563",
+  },
+  activeSortOptionText: {
+    color: "#3b82f6",
+    fontWeight: "600",
   },
 });

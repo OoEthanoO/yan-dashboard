@@ -33,10 +33,6 @@ app.post("/suggestions", async (req, res) => {
       (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
     );
 
-  const lowGradeCourses = courses
-    .filter((c) => c.grade && parseFloat(c.grade) < 90)
-    .map((c) => c.name);
-
   const studyStats = {};
   courses.forEach((course) => {
     const courseStudy = studySessions.filter((s) => s.courseId === course.id);
@@ -79,7 +75,9 @@ ${courses
   })
   .map(
     (course) =>
-      `${course.name}: ${course.grade || "No grade"} ${
+      `${course.name}: ${
+        course.grade !== undefined ? course.grade : "No grade"
+      } ${
         course.grade && parseFloat(course.grade) < 80
           ? "⚠️ CRITICAL - NEEDS FOCUS"
           : course.grade && parseFloat(course.grade) < 90
