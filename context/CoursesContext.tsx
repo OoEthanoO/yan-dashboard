@@ -7,17 +7,24 @@ import React, {
   useState,
 } from "react";
 
+export type GradePoint = {
+  date: string;
+  grade: number;
+};
+
 export type Course = {
   id: string;
   name: string;
   grade?: number;
+  gradeHistory?: GradePoint[];
 };
 
 type CoursesContextType = {
   courses: Course[];
   addCourse: (course: Omit<Course, "id">) => void;
   removeCourse: (id: string) => void;
-  setCourseGrade: (id: string, grade: string | number) => void;
+  setCourseGrade: (id: string, grade: string | number | undefined) => void;
+  updateCourseGradeHistory: (id: string, gradeHistory: GradePoint[]) => void;
 };
 
 const STORAGE_KEY = "courses";
@@ -65,21 +72,78 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     setCourses((prev) => prev.filter((c) => c.id !== id));
   }
 
-  function setCourseGrade(id: string, grade: string | number) {
+  function setCourseGrade(id: string, grade: string | number | undefined) {
+    if (
+      grade === undefined ||
+      (typeof grade === "string" && grade.trim() === "")
+    ) {
+      setCourses((prev) =>
+        prev.map((c) => {
+          if (c.id === id) {
+            return {
+              ...c,
+              grade: undefined,
+            };
+          }
+          return c;
+        })
+      );
+      return;
+    }
+
     const numericGrade = typeof grade === "string" ? Number(grade) : grade;
 
     setCourses((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? { ...c, grade: isNaN(numericGrade) ? undefined : numericGrade }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id === id) {
+          const newGradePoint = {
+            date: new Date().toISOString(),
+            grade: isNaN(numericGrade) ? 0 : numericGrade,
+          };
+
+          return {
+            ...c,
+            grade: isNaN(numericGrade) ? undefined : numericGrade,
+            gradeHistory: [...(c.gradeHistory || []), newGradePoint],
+          };
+        }
+        return c;
+      })
+    );
+  }
+
+  function updateCourseGradeHistory(id: string, gradeHistory: GradePoint[]) {
+    setCourses((prev) =>
+      prev.map((c) => {
+        if (c.id === id) {
+          const currentGrade =
+            gradeHistory.length > 0
+              ? gradeHistory.sort(
+                  (a, b) =>
+                    new Date(b.date).getTime() - new Date(a.date).getTime()
+                )[0].grade
+              : undefined;
+
+          return {
+            ...c,
+            gradeHistory,
+            grade: currentGrade,
+          };
+        }
+        return c;
+      })
     );
   }
 
   return (
     <CoursesContext.Provider
-      value={{ courses, addCourse, removeCourse, setCourseGrade }}
+      value={{
+        courses,
+        addCourse,
+        removeCourse,
+        setCourseGrade,
+        updateCourseGradeHistory,
+      }}
     >
       {children}
     </CoursesContext.Provider>

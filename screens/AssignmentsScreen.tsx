@@ -17,9 +17,18 @@ import {
 } from "react-native";
 import DatePicker from "../components/DatePicker";
 import { Assignment, useAssignments } from "../context/AssignmentsContext";
-import { useCourses } from "../context/CoursesContext";
+import { Course, GradePoint, useCourses } from "../context/CoursesContext";
+import GradeTrendChart from "@/components/GradeTrendChart";
 
 export default function AssignmentsScreen() {
+  const {
+    courses,
+    addCourse,
+    removeCourse,
+    setCourseGrade,
+    updateCourseGradeHistory,
+  } = useCourses();
+
   const {
     assignments,
     addAssignment,
@@ -28,7 +37,6 @@ export default function AssignmentsScreen() {
     toggleAssignmentCompleted,
     updateAssignment,
   } = useAssignments();
-  const { courses, addCourse, removeCourse, setCourseGrade } = useCourses();
 
   const [modalVisible, setModalVisible] = useState(false);
   const [courseModalVisible, setCourseModalVisible] = useState(false);
@@ -77,6 +85,19 @@ export default function AssignmentsScreen() {
   >("add");
   const [sortMethod, setSortMethod] = useState<string>("dueDate-asc");
   const [showSortOptions, setShowSortOptions] = useState(false);
+
+  const [expandedCourses, setExpandedCourses] = useState<
+    Record<string, boolean>
+  >({});
+
+  const [gradeHistoryModalVisible, setGradeHistoryModalVisible] =
+    useState(false);
+  const [selectedCourseForGradeHistory, setSelectedCourseForGradeHistory] =
+    useState<string | null>(null);
+  const [newGradePoint, setNewGradePoint] = useState({
+    date: new Date().toISOString().split("T")[0],
+    grade: "",
+  });
 
   const isIOS = Platform.OS === "ios";
 
@@ -471,12 +492,15 @@ export default function AssignmentsScreen() {
                         {editingCourseId === item.id ? (
                           <>
                             <TextInput
-                              value={
-                                courseGradeInput !== undefined
-                                  ? String(courseGradeInput)
-                                  : ""
-                              }
-                              onChangeText={setCourseGradeInput}
+                              value={courseGradeInput}
+                              onChangeText={(text) => {
+                                // Only allow numeric input
+                                const numericInput = text.replace(
+                                  /[^0-9]/g,
+                                  ""
+                                );
+                                setCourseGradeInput(numericInput);
+                              }}
                               style={[
                                 styles.input,
                                 { width: 60, marginBottom: 0 },
@@ -486,7 +510,11 @@ export default function AssignmentsScreen() {
                             />
                             <TouchableOpacity
                               onPress={() => {
-                                setCourseGrade(item.id, courseGradeInput);
+                                if (courseGradeInput.trim() === "") {
+                                  setCourseGrade(item.id, undefined);
+                                } else {
+                                  setCourseGrade(item.id, courseGradeInput);
+                                }
                                 setEditingCourseId(null);
                               }}
                             >
@@ -612,6 +640,128 @@ export default function AssignmentsScreen() {
           </View>
         </Modal>
       </View>
+      {/* Grade History Modal */}
+      <Modal
+        visible={gradeHistoryModalVisible}
+        animationType="none"
+        transparent
+      >
+        <View style={styles.modalBg}>
+          <View style={[styles.modalCard, { maxHeight: 500 }]}>
+            <Text style={styles.modalTitle}>Grade History</Text>
+            <Text style={styles.modalSubtitle}>
+              {selectedCourseForGradeHistory
+                ? getCourseName(selectedCourseForGradeHistory)
+                : ""}
+            </Text>
+
+            {/* Add New Grade Point Form */}
+            <View style={styles.gradeHistoryForm}>
+              <Text style={styles.inputLabel}>Add New Grade Point</Text>
+              <View style={styles.gradePointInputRow}>
+                <View style={styles.dateInputContainer}>
+                  <Text style={styles.inputLabelSmall}>Date</Text>
+                  <DatePicker
+                    value={newGradePoint.date}
+                    onChange={(date) =>
+                      setNewGradePoint((prev) => ({ ...prev, date }))
+                    }
+                    style={styles.inlineDatePicker}
+                  />
+                </View>
+                <View style={styles.gradeInputContainer}>
+                  <Text style={styles.inputLabelSmall}>Grade (%)</Text>
+                  <TextInput
+                    value={newGradePoint.grade}
+                    onChangeText={(text) => {
+                      // Only allow numeric input and cap at 100
+                      const numericInput = text.replace(/[^0-9]/g, "");
+                      const numValue = parseInt(numericInput, 10);
+                      if (numValue > 100) {
+                        setNewGradePoint((prev) => ({ ...prev, grade: "100" }));
+                      } else {
+                        setNewGradePoint((prev) => ({
+                          ...prev,
+                          grade: numericInput,
+                        }));
+                      }
+                    }}
+                    style={styles.gradeHistoryInput}
+                    placeholder="95"
+                    keyboardType="numeric"
+                  />
+                </View>
+                <TouchableOpacity
+                  style={styles.addGradePointButton}
+                  onPress={addGradeHistoryPoint}
+                >
+                  <Ionicons name="add" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Grade History List */}
+            <Text style={[styles.inputLabel, { marginTop: 16 }]}>
+              Grade History
+            </Text>
+            <ScrollView style={styles.gradeHistoryList}>
+              {selectedCourseForGradeHistory &&
+              courses.find((c) => c.id === selectedCourseForGradeHistory)
+                ?.gradeHistory?.length ? (
+                courses
+                  .find((c) => c.id === selectedCourseForGradeHistory)!
+                  .gradeHistory!.sort(
+                    (a, b) =>
+                      new Date(b.date).getTime() - new Date(a.date).getTime()
+                  )
+                  .map((point, index) => (
+                    <View
+                      key={`${point.date}-${index}`}
+                      style={styles.gradeHistoryItem}
+                    >
+                      <View style={styles.gradeHistoryItemContent}>
+                        <Text style={styles.gradeHistoryDate}>
+                          {new Date(point.date).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </Text>
+                        <Text style={styles.gradeHistoryValue}>
+                          {point.grade}%
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() =>
+                          deleteGradePoint(selectedCourseForGradeHistory, index)
+                        }
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color="#ff6b6b"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+              ) : (
+                <Text style={styles.noDataText}>
+                  No grade history data. Add your first grade point above.
+                </Text>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setGradeHistoryModalVisible(false)}
+              >
+                <Text style={styles.modalCloseButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 
@@ -816,8 +966,15 @@ export default function AssignmentsScreen() {
 
   function AssignmentCard({ item }: { item: Assignment }) {
     const [expanded, setExpanded] = useState(false);
+    const [localGradeInput, setLocalGradeInput] = useState<string>("");
     const isOverdue = new Date(item.dueDate) < new Date() && !item.completed;
     const courseColor = getColorForCourse(item.courseId);
+
+    useEffect(() => {
+      if (editingAssignmentId === item.id) {
+        setLocalGradeInput(item.grade !== undefined ? String(item.grade) : "");
+      }
+    }, [editingAssignmentId]);
 
     return (
       <View
@@ -989,12 +1146,17 @@ export default function AssignmentsScreen() {
             <Text style={styles.inlineFormTitle}>Update Grade</Text>
             <View style={styles.gradeInputRow}>
               <TextInput
-                value={
-                  assignmentGradeInput !== undefined
-                    ? String(assignmentGradeInput)
-                    : ""
-                }
-                onChangeText={setAssignmentGradeInput}
+                value={localGradeInput}
+                onChangeText={(text) => {
+                  // Only allow numeric input and cap at 100
+                  const numericInput = text.replace(/[^0-9]/g, "");
+                  const numValue = parseInt(numericInput, 10);
+                  if (numValue > 100) {
+                    setLocalGradeInput("100");
+                  } else {
+                    setLocalGradeInput(numericInput);
+                  }
+                }}
                 style={styles.gradeInput}
                 placeholder="95"
                 keyboardType="numeric"
@@ -1004,7 +1166,17 @@ export default function AssignmentsScreen() {
               <TouchableOpacity
                 style={styles.saveButton}
                 onPress={() => {
-                  setAssignmentGrade(item.id, assignmentGradeInput);
+                  if (localGradeInput.trim() === "") {
+                    // If input is empty, set grade to undefined to delete it
+                    setAssignmentGrade(item.id, undefined);
+                  } else {
+                    const numValue = parseInt(localGradeInput, 10);
+                    const clampedValue = Math.min(
+                      Math.max(isNaN(numValue) ? 0 : numValue, 0),
+                      100
+                    );
+                    setAssignmentGrade(item.id, clampedValue.toString());
+                  }
                   setEditingAssignmentId(null);
                 }}
               >
@@ -1212,12 +1384,12 @@ export default function AssignmentsScreen() {
                     {editingCourseId === item.id ? (
                       <View style={styles.courseGradeEditRow}>
                         <TextInput
-                          value={
-                            courseGradeInput !== undefined
-                              ? String(courseGradeInput)
-                              : ""
-                          }
-                          onChangeText={setCourseGradeInput}
+                          value={courseGradeInput}
+                          onChangeText={(text) => {
+                            // Only allow numeric input
+                            const numericInput = text.replace(/[^0-9]/g, "");
+                            setCourseGradeInput(numericInput);
+                          }}
                           style={styles.courseGradeInput}
                           keyboardType="numeric"
                           placeholder="95"
@@ -1237,29 +1409,76 @@ export default function AssignmentsScreen() {
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <TouchableOpacity
-                        style={styles.courseGradeDisplay}
-                        onPress={() => {
-                          setEditingCourseId(item.id);
-                          setCourseGradeInput(
-                            item.grade !== undefined ? String(item.grade) : ""
-                          );
-                        }}
-                      >
-                        <Text style={styles.courseGradeText}>
-                          {item.grade !== undefined
-                            ? `${item.grade}%`
-                            : "Set Grade"}
-                        </Text>
-                        <Ionicons
-                          name="create-outline"
-                          size={16}
-                          color="#666"
-                        />
-                      </TouchableOpacity>
+                      <View>
+                        <TouchableOpacity
+                          style={styles.courseGradeDisplay}
+                          onPress={() => {
+                            setEditingCourseId(item.id);
+                            setCourseGradeInput(
+                              item.grade !== undefined ? String(item.grade) : ""
+                            );
+                          }}
+                        >
+                          <Text style={styles.courseGradeText}>
+                            {item.grade !== undefined
+                              ? `${item.grade}%`
+                              : "Set Grade"}
+                          </Text>
+                          <Ionicons
+                            name="create-outline"
+                            size={16}
+                            color="#666"
+                          />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.gradeHistoryButton}
+                          onPress={() => openGradeHistoryModal(item.id)}
+                        >
+                          <Ionicons
+                            name="analytics-outline"
+                            size={14}
+                            color="#3b82f6"
+                          />
+                          <Text style={styles.gradeHistoryButtonText}>
+                            Grade History ({item.gradeHistory?.length || 0})
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </View>
                 </View>
+
+                {/* Show trend button */}
+                <TouchableOpacity
+                  style={styles.trendButton}
+                  onPress={() => toggleCourseExpanded(item.id)}
+                >
+                  <Text style={styles.trendButtonText}>
+                    {expandedCourses[item.id]
+                      ? "Hide Grade Trend"
+                      : "Show Grade Trend"}
+                  </Text>
+                  <Ionicons
+                    name={
+                      expandedCourses[item.id] ? "chevron-up" : "chevron-down"
+                    }
+                    size={16}
+                    color="#3b82f6"
+                  />
+                </TouchableOpacity>
+
+                {/* Expanded grade trend chart */}
+                {expandedCourses[item.id] && (
+                  <View style={styles.expandedGradeContent}>
+                    <GradeTrendChart
+                      course={item}
+                      assignments={assignments.filter(
+                        (a) => a.courseId === item.id && a.grade !== undefined
+                      )}
+                    />
+                  </View>
+                )}
 
                 {/* Action buttons */}
                 <View style={styles.courseCardActions}>
@@ -1403,8 +1622,8 @@ export default function AssignmentsScreen() {
   }
 
   function formatDate(dateString: string): string {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const date = new Date(dateString.replace(/-/g, "/"));
+    return date.toDateString();
   }
 
   function getColorForCourse(courseId: string) {
@@ -1419,6 +1638,63 @@ export default function AssignmentsScreen() {
     ];
     const index = parseInt(courseId, 36) % colors.length;
     return colors[index];
+  }
+
+  function toggleCourseExpanded(courseId: string) {
+    setExpandedCourses((prev) => ({
+      ...prev,
+      [courseId]: !prev[courseId],
+    }));
+  }
+
+  // Add this function to open the grade history modal
+  function openGradeHistoryModal(courseId: string) {
+    setSelectedCourseForGradeHistory(courseId);
+    setNewGradePoint({
+      date: new Date().toISOString().split("T")[0],
+      grade: "",
+    });
+    setGradeHistoryModalVisible(true);
+  }
+
+  // Add this function to add a new grade point
+  function addGradeHistoryPoint() {
+    if (!selectedCourseForGradeHistory || !newGradePoint.grade) return;
+
+    const numericGrade = Number(newGradePoint.grade);
+    if (isNaN(numericGrade) || numericGrade < 0 || numericGrade > 100) return;
+
+    // Instead of using setCourseGrade which always uses current date,
+    // we'll use updateCourseGradeHistory to add the grade with the selected date
+    const course = courses.find((c) => c.id === selectedCourseForGradeHistory);
+    if (!course) return;
+
+    const newGradeHistory = [
+      ...(course.gradeHistory || []),
+      {
+        date: newGradePoint.date, // Use the date from the DatePicker
+        grade: numericGrade,
+      },
+    ];
+
+    // Update the grade history with our new point
+    updateCourseGradeHistory(selectedCourseForGradeHistory, newGradeHistory);
+
+    // Reset the form
+    setNewGradePoint({
+      date: new Date().toISOString().split("T")[0],
+      grade: "",
+    });
+  }
+
+  function deleteGradePoint(courseId: string, pointIndex: number) {
+    const course = courses.find((c) => c.id === courseId);
+    if (!course || !course.gradeHistory) return;
+
+    const updatedHistory = [...course.gradeHistory];
+    updatedHistory.splice(pointIndex, 1);
+
+    updateCourseGradeHistory(courseId, updatedHistory);
   }
 }
 
@@ -2322,5 +2598,133 @@ const styles = StyleSheet.create({
   activeSortOptionText: {
     color: "#3b82f6",
     fontWeight: "600",
+  },
+  trendButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  trendButtonText: {
+    color: "#3b82f6",
+    fontWeight: "500",
+    fontSize: 14,
+  },
+  expandedGradeContent: {
+    paddingTop: 10,
+    paddingHorizontal: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#3b82f6",
+    marginBottom: 16,
+  },
+  gradeHistoryForm: {
+    backgroundColor: "#f8fafc",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  gradePointInputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+  },
+  dateInputContainer: {
+    flex: 2,
+  },
+  gradeInputContainer: {
+    flex: 1,
+  },
+  inputLabelSmall: {
+    fontSize: 12,
+    color: "#64748b",
+    marginBottom: 4,
+  },
+  gradeHistoryInput: {
+    backgroundColor: "#fff",
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: "#111827",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  addGradePointButton: {
+    backgroundColor: "#3b82f6",
+    borderRadius: 6,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gradeHistoryList: {
+    maxHeight: 250,
+  },
+  gradeHistoryItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  gradeHistoryItemContent: {
+    flexDirection: "row",
+    flex: 1,
+    justifyContent: "space-between",
+    marginRight: 12,
+  },
+  gradeHistoryDate: {
+    fontSize: 14,
+    color: "#4b5563",
+  },
+  gradeHistoryValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  noDataText: {
+    color: "#94a3b8",
+    fontStyle: "italic",
+    textAlign: "center",
+    paddingVertical: 20,
+  },
+  modalActions: {
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    paddingTop: 12,
+    marginTop: 8,
+    alignItems: "flex-end",
+  },
+  modalCloseButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  modalCloseButtonText: {
+    color: "#64748b",
+    fontWeight: "500",
+  },
+  gradeHistoryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    gap: 4,
+    marginTop: 4,
+  },
+  gradeHistoryButtonText: {
+    color: "#3b82f6",
+    fontSize: 12,
+    fontWeight: "500",
   },
 });

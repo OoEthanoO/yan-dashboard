@@ -10,6 +10,13 @@ interface DatePickerProps {
   style?: any;
 }
 
+function formatDateToYYYYMMDD(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export default function DatePicker({
   value,
   onChange,
@@ -19,7 +26,7 @@ export default function DatePicker({
 }: DatePickerProps) {
   if (Platform.OS === "web") {
     const dateValue =
-      value instanceof Date ? value.toISOString().split("T")[0] : value;
+      value instanceof Date ? formatDateToYYYYMMDD(value) : value;
 
     return createElement("input", {
       type: "date",
@@ -36,6 +43,7 @@ export default function DatePicker({
       },
       onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.value) {
+          console.log("Web DatePicker - Selected date:", e.target.value);
           onChange(e.target.value);
         }
       },
@@ -49,7 +57,10 @@ export default function DatePicker({
       display={display}
       onChange={(_, selectedDate) => {
         if (selectedDate) {
-          onChange(selectedDate.toISOString().split("T")[0]);
+          const formattedDate = formatDateToYYYYMMDD(selectedDate);
+          console.log("Native DatePicker - Raw selected date:", selectedDate);
+          console.log("Native DatePicker - Formatted date:", formattedDate);
+          onChange(formattedDate);
         }
       }}
       style={style}

@@ -21,7 +21,7 @@ type AssignmentsContextType = {
   assignments: Assignment[];
   addAssignment: (a: Omit<Assignment, "id">) => void;
   removeAssignment: (id: string) => void;
-  setAssignmentGrade: (id: string, grade: string | number) => void;
+  setAssignmentGrade: (id: string, grade: string | number | undefined) => void;
   toggleAssignmentCompleted: (id: string) => void;
   updateAssignment: (
     id: string,
@@ -75,8 +75,13 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     setAssignments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  function setAssignmentGrade(id: string, grade: string | number) {
-    const numericGrade = typeof grade === "string" ? Number(grade) : grade;
+  function setAssignmentGrade(id: string, grade: string | number | undefined) {
+    const numericGrade =
+      grade === undefined
+        ? undefined
+        : typeof grade === "string"
+        ? Number(grade)
+        : grade;
 
     setAssignments((prev) =>
       prev.map((a) => {
@@ -87,7 +92,7 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
           if (dueDate <= now || a.completed) {
             return {
               ...a,
-              grade: isNaN(numericGrade) ? undefined : numericGrade,
+              grade: numericGrade,
             };
           } else {
             console.warn("Cannot grade future assignments");
