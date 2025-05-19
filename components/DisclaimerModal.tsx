@@ -21,7 +21,6 @@ export default function DisclaimerModal({
   onClose,
 }: DisclaimerModalProps) {
   const openGitHub = async () => {
-    // Replace with your actual GitHub repo URL
     const repoUrl = "https://github.com/ooethanoo/yan-dashboard";
     await WebBrowser.openBrowserAsync(repoUrl);
   };

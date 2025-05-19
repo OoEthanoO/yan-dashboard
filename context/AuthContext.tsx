@@ -44,9 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = async (data: { name?: string }) => {
     try {
       setLoading(true);
-      // Call API to update user data
       const response = await ApiClient.updateUser(data);
-      // Update local user state
       setUser((prev) => (prev ? { ...prev, ...data } : null));
       return response;
     } catch (error) {
@@ -57,7 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Check if user is already logged in
   useEffect(() => {
     async function checkAuth() {
       try {
@@ -82,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const user = await ApiClient.login(email, password);
       setUser(user);
-      await syncData(); // Sync data after login
+      await syncData();
     } catch (error) {
       console.error("Login failed:", error);
       throw error;
@@ -120,7 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
 
     try {
-      // Get local data from context
       const assignmentsStr = await AsyncStorage.getItem("assignments");
       const coursesStr = await AsyncStorage.getItem("courses");
       const studySessionsStr = await AsyncStorage.getItem("study_sessions");
@@ -131,14 +127,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ? JSON.parse(studySessionsStr)
         : [];
 
-      // Send to server and get updated data
       const updatedData = await ApiClient.syncData(
         assignments,
         courses,
         studySessions
       );
 
-      // Update local storage with merged data
       if (updatedData.assignments?.length > 0) {
         await AsyncStorage.setItem(
           "assignments",
@@ -159,9 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           JSON.stringify(updatedData.studySessions)
         );
       }
-
-      // Force reload of contexts
-      // You'd need to implement a refresh mechanism in your context providers
     } catch (error) {
       console.error("Data sync failed:", error);
     }

@@ -27,12 +27,10 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// OpenAI setup
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Define schemas
 const UserSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true },
@@ -57,7 +55,7 @@ const AssignmentSchema = new mongoose.Schema(
     courseId: { type: String, required: true },
     grade: { type: Number },
     completed: { type: Boolean, default: false },
-    syncId: { type: String, required: true }, // Local ID from the client
+    syncId: { type: String, required: true },
   },
   { timestamps: true }
 );
@@ -77,7 +75,7 @@ const CourseSchema = new mongoose.Schema(
         grade: Number,
       },
     ],
-    syncId: { type: String, required: true }, // Local ID from the client
+    syncId: { type: String, required: true },
   },
   { timestamps: true }
 );
@@ -93,18 +91,16 @@ const StudySessionSchema = new mongoose.Schema(
     date: { type: String, required: true },
     durationMinutes: { type: Number, required: true },
     notes: { type: String },
-    syncId: { type: String, required: true }, // Local ID from the client
+    syncId: { type: String, required: true },
   },
   { timestamps: true }
 );
 
-// Create models
 const User = mongoose.model("User", UserSchema);
 const Assignment = mongoose.model("Assignment", AssignmentSchema);
 const Course = mongoose.model("Course", CourseSchema);
 const StudySession = mongoose.model("StudySession", StudySessionSchema);
 
-// Authentication middleware
 const authenticate = async (req, res, next) => {
   try {
     const token = req.header("Authorization")?.replace("Bearer ", "");
@@ -131,27 +127,22 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-// Auth routes
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
-    // Validate input
     if (!email || !password || !name) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ error: "Email already in use" });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
     const user = new User({
       email,
       password: hashedPassword,
@@ -160,7 +151,6 @@ app.post("/api/auth/register", async (req, res) => {
 
     await user.save();
 
-    // Generate JWT token
     const token = jwt.sign(
       { _id: user._id },
       process.env.JWT_SECRET || "default_jwt_secret",
@@ -185,19 +175,16 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find user
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Verify password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       { _id: user._id },
       process.env.JWT_SECRET || "default_jwt_secret",
@@ -218,7 +205,6 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// Protected routes - requires authentication
 app.get("/api/auth/me", authenticate, (req, res) => {
   res.json({
     user: {
@@ -230,7 +216,6 @@ app.get("/api/auth/me", authenticate, (req, res) => {
   });
 });
 
-// Data sync endpoints
 app.post("/api/sync", authenticate, async (req, res) => {
   try {
     const { assignments, courses, studySessions, lastSyncTime } = req.body;
@@ -238,7 +223,6 @@ app.post("/api/sync", authenticate, async (req, res) => {
     const clientLastSync = new Date(lastSyncTime || 0);
     const serverLastSync = req.user.lastSync;
 
-    // Process assignments
     if (assignments && Array.isArray(assignments)) {
       for (const assignment of assignments) {
         await Assignment.findOneAndUpdate(
@@ -258,7 +242,6 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    // Process courses
     if (courses && Array.isArray(courses)) {
       for (const course of courses) {
         await Course.findOneAndUpdate(
@@ -275,7 +258,6 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    // Process study sessions
     if (studySessions && Array.isArray(studySessions)) {
       for (const session of studySessions) {
         await StudySession.findOneAndUpdate(
@@ -293,7 +275,6 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    // Get data that has been modified on the server since the client's last sync
     const updatedAssignments = await Assignment.find({
       userId,
       updatedAt: { $gt: clientLastSync },
@@ -309,7 +290,6 @@ app.post("/api/sync", authenticate, async (req, res) => {
       updatedAt: { $gt: clientLastSync },
     });
 
-    // Update user's last sync time
     req.user.lastSync = new Date();
     await req.user.save();
 
@@ -371,7 +351,6 @@ app.post("/api/auth/update", authenticate, async (req, res) => {
   }
 });
 
-// Fetch all user data
 app.get("/api/data", authenticate, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -410,37 +389,31 @@ app.get("/api/data", authenticate, async (req, res) => {
   }
 });
 
-// AI suggestions endpoint (keeping your existing functionality)
 app.post("/api/suggestions", authenticate, async (req, res) => {
   try {
     let { assignments, courses, studySessions } = req.body;
     const userId = req.user._id;
 
-    // If data has encrypted fields, decrypt them in a secure environment
     const decryptedData = await decryptInSecureEnvironment({
       assignments,
       courses,
       studySessions,
     });
 
-    // Validate the decryption was successful
     const validationResult = validateDecryptedData(decryptedData);
     if (!validationResult.fullyDecrypted) {
       console.warn("Some data could not be fully decrypted:", validationResult);
     }
 
-    // Use decrypted data for further processing
     assignments = decryptedData.assignments;
     courses = decryptedData.courses;
     studySessions = decryptedData.studySessions;
 
-    // If no data provided, fetch from the database
     if (!assignments || !courses || !studySessions) {
       assignments = await Assignment.find({ userId });
       courses = await Course.find({ userId });
       studySessions = await StudySession.find({ userId });
 
-      // These need to be decrypted as well
       const dbDecryptedData = await decryptInSecureEnvironment({
         assignments,
         courses,
@@ -451,7 +424,6 @@ app.post("/api/suggestions", authenticate, async (req, res) => {
       courses = dbDecryptedData.courses;
       studySessions = dbDecryptedData.studySessions;
 
-      // Convert to the format expected by the AI suggestion logic
       assignments = assignments.map((a) => ({
         id: a.syncId,
         title: a.title,

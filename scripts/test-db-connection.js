@@ -10,7 +10,6 @@ async function testConnection() {
     await mongoose.connect(uri);
     console.log("✅ Successfully connected to MongoDB!");
 
-    // List all collections
     const collections = await mongoose.connection.db
       .listCollections()
       .toArray();

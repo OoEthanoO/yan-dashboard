@@ -1,26 +1,20 @@
 import CryptoJS from "crypto-js";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Get the encryption key from environment or secure storage
-// In a production environment, you'd use a more sophisticated key management system
 const AI_PUBLIC_KEY = "AI_MODEL_PUBLIC_KEY_2023";
 
-// Create a namespace for encrypted data storage to clearly mark which data is encrypted
 const ENCRYPTION_NAMESPACE = "encrypted_";
 
 export const EncryptionService = {
-  // Get device-specific encryption salt to add additional security
   getDeviceSalt: async () => {
     let salt = await AsyncStorage.getItem("device_encryption_salt");
     if (!salt) {
-      // Generate a unique salt for this device
       salt = CryptoJS.lib.WordArray.random(128 / 8).toString();
       await AsyncStorage.setItem("device_encryption_salt", salt);
     }
     return salt;
   },
 
-  // Encrypt grade data for sending to the server
   encryptGradeData: async (data) => {
     if (data === null || data === undefined) return data;
 
@@ -32,12 +26,10 @@ export const EncryptionService = {
       return CryptoJS.AES.encrypt(stringData, combinedKey).toString();
     } catch (error) {
       console.error("Encryption error:", error);
-      // Return a placeholder to indicate encryption error
       return null;
     }
   },
 
-  // Decrypt grade data (only used locally for display)
   decryptGradeData: async (encryptedData) => {
     if (!encryptedData) return null;
 
@@ -53,7 +45,6 @@ export const EncryptionService = {
     }
   },
 
-  // Process assignments to encrypt grade data
   processAssignmentsForSync: async (assignments) => {
     if (!assignments || !Array.isArray(assignments)) return assignments;
 
@@ -82,7 +73,6 @@ export const EncryptionService = {
     return processedAssignments;
   },
 
-  // Process courses to encrypt grade data
   processCoursesForSync: async (courses) => {
     if (!courses || !Array.isArray(courses)) return courses;
 
@@ -96,7 +86,6 @@ export const EncryptionService = {
 
       const processedCourse = { ...course };
 
-      // Encrypt course grade
       if (course.grade !== undefined && course.grade !== null) {
         processedCourse.grade = await EncryptionService.encryptGradeData(
           course.grade
@@ -104,7 +93,6 @@ export const EncryptionService = {
         processedCourse.isGradeEncrypted = true;
       }
 
-      // Encrypt grade history
       if (
         course.gradeHistory &&
         Array.isArray(course.gradeHistory) &&
@@ -133,7 +121,6 @@ export const EncryptionService = {
     return processedCourses;
   },
 
-  // Function to decrypt assignments locally (for display only)
   decryptAssignments: async (encryptedAssignments) => {
     if (!encryptedAssignments || !Array.isArray(encryptedAssignments))
       return encryptedAssignments;
@@ -159,7 +146,6 @@ export const EncryptionService = {
     return decryptedAssignments;
   },
 
-  // Function to decrypt courses locally (for display only)
   decryptCourses: async (encryptedCourses) => {
     if (!encryptedCourses || !Array.isArray(encryptedCourses))
       return encryptedCourses;
@@ -174,7 +160,6 @@ export const EncryptionService = {
 
       const decryptedCourse = { ...course };
 
-      // Decrypt course grade
       if (course.isGradeEncrypted && course.grade) {
         decryptedCourse.grade = await EncryptionService.decryptGradeData(
           course.grade
@@ -182,7 +167,6 @@ export const EncryptionService = {
         decryptedCourse.isGradeEncrypted = false;
       }
 
-      // Decrypt grade history
       if (course.gradeHistory && Array.isArray(course.gradeHistory)) {
         const decryptedHistory = [];
 
