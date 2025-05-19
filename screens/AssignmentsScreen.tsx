@@ -494,7 +494,6 @@ export default function AssignmentsScreen() {
                             <TextInput
                               value={courseGradeInput}
                               onChangeText={(text) => {
-                                // Only allow numeric input
                                 const numericInput = text.replace(
                                   /[^0-9]/g,
                                   ""
@@ -674,7 +673,6 @@ export default function AssignmentsScreen() {
                   <TextInput
                     value={newGradePoint.grade}
                     onChangeText={(text) => {
-                      // Only allow numeric input and cap at 100
                       const numericInput = text.replace(/[^0-9]/g, "");
                       const numValue = parseInt(numericInput, 10);
                       if (numValue > 100) {
@@ -1148,7 +1146,6 @@ export default function AssignmentsScreen() {
               <TextInput
                 value={localGradeInput}
                 onChangeText={(text) => {
-                  // Only allow numeric input and cap at 100
                   const numericInput = text.replace(/[^0-9]/g, "");
                   const numValue = parseInt(numericInput, 10);
                   if (numValue > 100) {
@@ -1167,7 +1164,6 @@ export default function AssignmentsScreen() {
                 style={styles.saveButton}
                 onPress={() => {
                   if (localGradeInput.trim() === "") {
-                    // If input is empty, set grade to undefined to delete it
                     setAssignmentGrade(item.id, undefined);
                   } else {
                     const numValue = parseInt(localGradeInput, 10);
@@ -1386,7 +1382,6 @@ export default function AssignmentsScreen() {
                         <TextInput
                           value={courseGradeInput}
                           onChangeText={(text) => {
-                            // Only allow numeric input
                             const numericInput = text.replace(/[^0-9]/g, "");
                             setCourseGradeInput(numericInput);
                           }}
@@ -1647,7 +1642,6 @@ export default function AssignmentsScreen() {
     }));
   }
 
-  // Add this function to open the grade history modal
   function openGradeHistoryModal(courseId: string) {
     setSelectedCourseForGradeHistory(courseId);
     setNewGradePoint({
@@ -1657,30 +1651,25 @@ export default function AssignmentsScreen() {
     setGradeHistoryModalVisible(true);
   }
 
-  // Add this function to add a new grade point
   function addGradeHistoryPoint() {
     if (!selectedCourseForGradeHistory || !newGradePoint.grade) return;
 
     const numericGrade = Number(newGradePoint.grade);
     if (isNaN(numericGrade) || numericGrade < 0 || numericGrade > 100) return;
 
-    // Instead of using setCourseGrade which always uses current date,
-    // we'll use updateCourseGradeHistory to add the grade with the selected date
     const course = courses.find((c) => c.id === selectedCourseForGradeHistory);
     if (!course) return;
 
     const newGradeHistory = [
       ...(course.gradeHistory || []),
       {
-        date: newGradePoint.date, // Use the date from the DatePicker
+        date: newGradePoint.date,
         grade: numericGrade,
       },
     ];
 
-    // Update the grade history with our new point
     updateCourseGradeHistory(selectedCourseForGradeHistory, newGradeHistory);
 
-    // Reset the form
     setNewGradePoint({
       date: new Date().toISOString().split("T")[0],
       grade: "",

@@ -3,46 +3,511 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const OpenAI = require("openai");
+const {
+  decryptInSecureEnvironment,
+  validateDecryptedData,
+} = require("./secure-decryption");
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+mongoose
+  .connect(
+    process.env.MONGODB_URI || "mongodb://localhost:27017/yan-dashboard",
+    {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    }
+  )
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((err) => console.error("MongoDB connection error:", err));
+
+// OpenAI setup
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-app.post("/suggestions", async (req, res) => {
-  const { assignments, courses, studySessions } = req.body;
+// Define schemas
+const UserSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },
+    name: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+    lastSync: { type: Date, default: Date.now },
+  },
+  { timestamps: true }
+);
 
-  const cleanedAssignments = assignments.map((assignment) => {
-    const now = new Date();
-    const dueDate = new Date(assignment.dueDate);
+const AssignmentSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    title: { type: String, required: true },
+    dueDate: { type: String, required: true },
+    description: { type: String },
+    courseId: { type: String, required: true },
+    grade: { type: Number },
+    completed: { type: Boolean, default: false },
+    syncId: { type: String, required: true }, // Local ID from the client
+  },
+  { timestamps: true }
+);
 
-    if (dueDate > now && !assignment.completed) {
-      const { grade, ...restOfAssignment } = assignment;
-      return restOfAssignment;
+const CourseSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    name: { type: String, required: true },
+    grade: { type: Number },
+    gradeHistory: [
+      {
+        date: String,
+        grade: Number,
+      },
+    ],
+    syncId: { type: String, required: true }, // Local ID from the client
+  },
+  { timestamps: true }
+);
+
+const StudySessionSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    courseId: { type: String, required: true },
+    date: { type: String, required: true },
+    durationMinutes: { type: Number, required: true },
+    notes: { type: String },
+    syncId: { type: String, required: true }, // Local ID from the client
+  },
+  { timestamps: true }
+);
+
+// Create models
+const User = mongoose.model("User", UserSchema);
+const Assignment = mongoose.model("Assignment", AssignmentSchema);
+const Course = mongoose.model("Course", CourseSchema);
+const StudySession = mongoose.model("StudySession", StudySessionSchema);
+
+// Authentication middleware
+const authenticate = async (req, res, next) => {
+  try {
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
     }
-    return assignment;
-  });
 
-  const upcomingAssignments = cleanedAssignments
-    .filter((a) => new Date(a.dueDate) > new Date())
-    .sort(
-      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "default_jwt_secret"
+    );
+    const user = await User.findById(decoded._id);
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    req.user = user;
+    req.token = token;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+};
+
+// Auth routes
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+
+    // Validate input
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: "Email already in use" });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user
+    const user = new User({
+      email,
+      password: hashedPassword,
+      name,
+    });
+
+    await user.save();
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { _id: user._id },
+      process.env.JWT_SECRET || "default_jwt_secret",
+      { expiresIn: "7d" }
     );
 
-  const studyStats = {};
-  courses.forEach((course) => {
-    const courseStudy = studySessions.filter((s) => s.courseId === course.id);
-    studyStats[course.name] = {
-      totalMinutes: courseStudy.reduce((sum, s) => sum + s.durationMinutes, 0),
-      sessions: courseStudy.length,
-    };
-  });
+    res.status(201).json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+      },
+    });
+  } catch (err) {
+    console.error("Registration error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
-  const prompt = `
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find user
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Verify password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { _id: user._id },
+      process.env.JWT_SECRET || "default_jwt_secret",
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+      },
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Protected routes - requires authentication
+app.get("/api/auth/me", authenticate, (req, res) => {
+  res.json({
+    user: {
+      id: req.user._id,
+      email: req.user.email,
+      name: req.user.name,
+      lastSync: req.user.lastSync,
+    },
+  });
+});
+
+// Data sync endpoints
+app.post("/api/sync", authenticate, async (req, res) => {
+  try {
+    const { assignments, courses, studySessions, lastSyncTime } = req.body;
+    const userId = req.user._id;
+    const clientLastSync = new Date(lastSyncTime || 0);
+    const serverLastSync = req.user.lastSync;
+
+    // Process assignments
+    if (assignments && Array.isArray(assignments)) {
+      for (const assignment of assignments) {
+        await Assignment.findOneAndUpdate(
+          { userId, syncId: assignment.id },
+          {
+            userId,
+            title: assignment.title,
+            dueDate: assignment.dueDate,
+            description: assignment.description || "",
+            courseId: assignment.courseId,
+            grade: assignment.grade,
+            completed: assignment.completed || false,
+            syncId: assignment.id,
+          },
+          { upsert: true, new: true }
+        );
+      }
+    }
+
+    // Process courses
+    if (courses && Array.isArray(courses)) {
+      for (const course of courses) {
+        await Course.findOneAndUpdate(
+          { userId, syncId: course.id },
+          {
+            userId,
+            name: course.name,
+            grade: course.grade,
+            gradeHistory: course.gradeHistory || [],
+            syncId: course.id,
+          },
+          { upsert: true, new: true }
+        );
+      }
+    }
+
+    // Process study sessions
+    if (studySessions && Array.isArray(studySessions)) {
+      for (const session of studySessions) {
+        await StudySession.findOneAndUpdate(
+          { userId, syncId: session.id },
+          {
+            userId,
+            courseId: session.courseId,
+            date: session.date,
+            durationMinutes: session.durationMinutes,
+            notes: session.notes || "",
+            syncId: session.id,
+          },
+          { upsert: true, new: true }
+        );
+      }
+    }
+
+    // Get data that has been modified on the server since the client's last sync
+    const updatedAssignments = await Assignment.find({
+      userId,
+      updatedAt: { $gt: clientLastSync },
+    });
+
+    const updatedCourses = await Course.find({
+      userId,
+      updatedAt: { $gt: clientLastSync },
+    });
+
+    const updatedStudySessions = await StudySession.find({
+      userId,
+      updatedAt: { $gt: clientLastSync },
+    });
+
+    // Update user's last sync time
+    req.user.lastSync = new Date();
+    await req.user.save();
+
+    res.json({
+      success: true,
+      lastSync: req.user.lastSync,
+      data: {
+        assignments: updatedAssignments.map((a) => ({
+          id: a.syncId,
+          title: a.title,
+          dueDate: a.dueDate,
+          description: a.description,
+          courseId: a.courseId,
+          grade: a.grade,
+          completed: a.completed,
+        })),
+        courses: updatedCourses.map((c) => ({
+          id: c.syncId,
+          name: c.name,
+          grade: c.grade,
+          gradeHistory: c.gradeHistory,
+        })),
+        studySessions: updatedStudySessions.map((s) => ({
+          id: s.syncId,
+          courseId: s.courseId,
+          date: s.date,
+          durationMinutes: s.durationMinutes,
+          notes: s.notes,
+        })),
+      },
+    });
+  } catch (err) {
+    console.error("Sync error:", err);
+    res.status(500).json({ error: "Sync failed" });
+  }
+});
+
+app.post("/api/auth/update", authenticate, async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (name) {
+      req.user.name = name;
+    }
+
+    await req.user.save();
+
+    res.json({
+      success: true,
+      user: {
+        id: req.user._id,
+        email: req.user.email,
+        name: req.user.name,
+      },
+    });
+  } catch (err) {
+    console.error("User update error:", err);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+// Fetch all user data
+app.get("/api/data", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const assignments = await Assignment.find({ userId });
+    const courses = await Course.find({ userId });
+    const studySessions = await StudySession.find({ userId });
+
+    res.json({
+      assignments: assignments.map((a) => ({
+        id: a.syncId,
+        title: a.title,
+        dueDate: a.dueDate,
+        description: a.description,
+        courseId: a.courseId,
+        grade: a.grade,
+        completed: a.completed,
+      })),
+      courses: courses.map((c) => ({
+        id: c.syncId,
+        name: c.name,
+        grade: c.grade,
+        gradeHistory: c.gradeHistory,
+      })),
+      studySessions: studySessions.map((s) => ({
+        id: s.syncId,
+        courseId: s.courseId,
+        date: s.date,
+        durationMinutes: s.durationMinutes,
+        notes: s.notes,
+      })),
+    });
+  } catch (err) {
+    console.error("Data fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch data" });
+  }
+});
+
+// AI suggestions endpoint (keeping your existing functionality)
+app.post("/api/suggestions", authenticate, async (req, res) => {
+  try {
+    let { assignments, courses, studySessions } = req.body;
+    const userId = req.user._id;
+
+    // If data has encrypted fields, decrypt them in a secure environment
+    const decryptedData = await decryptInSecureEnvironment({
+      assignments,
+      courses,
+      studySessions,
+    });
+
+    // Validate the decryption was successful
+    const validationResult = validateDecryptedData(decryptedData);
+    if (!validationResult.fullyDecrypted) {
+      console.warn("Some data could not be fully decrypted:", validationResult);
+    }
+
+    // Use decrypted data for further processing
+    assignments = decryptedData.assignments;
+    courses = decryptedData.courses;
+    studySessions = decryptedData.studySessions;
+
+    // If no data provided, fetch from the database
+    if (!assignments || !courses || !studySessions) {
+      assignments = await Assignment.find({ userId });
+      courses = await Course.find({ userId });
+      studySessions = await StudySession.find({ userId });
+
+      // These need to be decrypted as well
+      const dbDecryptedData = await decryptInSecureEnvironment({
+        assignments,
+        courses,
+        studySessions,
+      });
+
+      assignments = dbDecryptedData.assignments;
+      courses = dbDecryptedData.courses;
+      studySessions = dbDecryptedData.studySessions;
+
+      // Convert to the format expected by the AI suggestion logic
+      assignments = assignments.map((a) => ({
+        id: a.syncId,
+        title: a.title,
+        dueDate: a.dueDate,
+        description: a.description,
+        courseId: a.courseId,
+        grade: a.grade,
+        completed: a.completed,
+      }));
+
+      courses = courses.map((c) => ({
+        id: c.syncId,
+        name: c.name,
+        grade: c.grade,
+        gradeHistory: c.gradeHistory,
+      }));
+
+      studySessions = studySessions.map((s) => ({
+        id: s.syncId,
+        courseId: s.courseId,
+        date: s.date,
+        durationMinutes: s.durationMinutes,
+        notes: s.notes,
+      }));
+    }
+
+    const cleanedAssignments = assignments.map((assignment) => {
+      const now = new Date();
+      const dueDate = new Date(assignment.dueDate);
+
+      if (dueDate > now && !assignment.completed) {
+        const { grade, ...restOfAssignment } = assignment;
+        return restOfAssignment;
+      }
+      return assignment;
+    });
+
+    const upcomingAssignments = cleanedAssignments
+      .filter((a) => new Date(a.dueDate) > new Date())
+      .sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      );
+
+    const studyStats = {};
+    courses.forEach((course) => {
+      const courseStudy = studySessions.filter((s) => s.courseId === course.id);
+      studyStats[course.name] = {
+        totalMinutes: courseStudy.reduce(
+          (sum, s) => sum + s.durationMinutes,
+          0
+        ),
+        sessions: courseStudy.length,
+      };
+    });
+
+    const prompt = `
 You are looking at REAL student data that has already been provided below. DO NOT ask for more data.
 Your task is to analyze this SPECIFIC student data and provide 5 VERY SHORT, personalized productivity suggestions.
 
@@ -123,10 +588,7 @@ ${courses
 BASED ON THE ABOVE REAL DATA, provide 5 specific, personalized productivity suggestions that reference actual course names and assignments.
 `;
 
-  try {
-    console.log("Prompt sent to OpenAI:", prompt);
     const completion = await openai.chat.completions.create({
-      // model: "o4-mini-2025-04-16",
       model: "gpt-4-0613",
       messages: [
         {
@@ -149,36 +611,10 @@ BASED ON THE ABOVE REAL DATA, provide 5 specific, personalized productivity sugg
       temperature: 0.7,
     });
 
-    // const completion = await openai.responses.create({
-    //   model: "o4-mini-2025-04-16", // Keep using nano model
-    //   // model: "o3-mini-2025-01-31",
-    //   reasoning: { effort: "low" },
-    //   input: [
-    //     // {
-    //     //   role: "system",
-    //     //   content:
-    //     //     "You are a highly personalized academic productivity assistant analyzing real student data. Your primary focus is improving performance in LOWER-GRADED SUBJECTS.\n\n" +
-    //     //     "CRITICAL PRIORITIES:\n" +
-    //     //     "- Dedicate at least 3/5 suggestions to the lowest-graded courses\n" +
-    //     //     "- Always reference specific course names and assignment titles\n" +
-    //     //     "- Each suggestion must be under 15 words, formatted with • symbol\n" +
-    //     //     "- Analyze study patterns and suggest targeted time allocation\n" +
-    //     //     "- Identify subject-specific weaknesses based on grade patterns\n" +
-    //     //     "- Never claim data is missing; work with what's provided\n" +
-    //     //     "- Be ultra-specific and actionable - avoid generic advice\n\n" +
-    //     //     "Your suggestions should address the student's actual course performance, prioritizing improvement where grades are lowest.",
-    //     // },
-    //     { role: "user", content: prompt },
-    //   ],
-    //   // max_tokens: 200,
-    //   // temperature: 0.7,
-    // });
-
-    console.log("OpenAI response:", completion.output_text);
-
     const suggestions = completion.choices[0].message.content;
     res.json({ suggestions });
-  } catch (fallbackErr) {
+  } catch (err) {
+    console.error("AI suggestions error:", err);
     res.status(500).json({ error: "AI suggestion failed" });
   }
 });
@@ -190,5 +626,5 @@ function getCourseName(courseId, courses) {
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`AI Suggestions server running on port ${PORT}`);
+  console.log(`API Server running on port ${PORT}`);
 });
