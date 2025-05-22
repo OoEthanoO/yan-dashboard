@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -6,7 +5,9 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import { ApiClient } from "../services/api-client";
 
+// Study sessions don't contain grade data, so no encryption needed for this context
 export type StudySession = {
   id: string;
   courseId: string;
@@ -17,12 +18,12 @@ export type StudySession = {
 
 type StudySessionsContextType = {
   sessions: StudySession[];
-  addSession: (session: Omit<StudySession, "id">) => void;
-  removeSession: (id: string) => void;
+  loading: boolean;
+  refreshSessions: () => Promise<void>;
+  addSession: (session: Omit<StudySession, "id">) => Promise<void>;
+  removeSession: (id: string) => Promise<void>;
   getSessionsByCourse: (courseId: string) => StudySession[];
 };
-
-const STORAGE_KEY = "study_sessions";
 
 const StudySessionsContext = createContext<
   StudySessionsContextType | undefined
@@ -39,35 +40,69 @@ export function useStudySessions() {
 
 export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<StudySession[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
+  const fetchSessions = async () => {
+    try {
+      setLoading(true);
+      const data = await ApiClient.getAllData();
+      if (data?.studySessions) {
+        setSessions(data.studySessions);
+      }
+    } catch (error) {
+      console.error("Failed to fetch study sessions:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial data load
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
-      if (data) setSessions(JSON.parse(data));
-    });
+    fetchSessions();
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  }, [sessions]);
+  const refreshSessions = async () => {
+    await fetchSessions();
+  };
 
-  function addSession(session: Omit<StudySession, "id">) {
-    setSessions((prev) => [
-      ...prev,
-      { ...session, id: Math.random().toString(36).slice(2) },
-    ]);
-  }
+  const addSession = async (session: Omit<StudySession, "id">) => {
+    try {
+      setLoading(true);
+      await ApiClient.createStudySession(session);
+      await fetchSessions();
+    } catch (error) {
+      console.error("Failed to add study session:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  function removeSession(id: string) {
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-  }
+  const removeSession = async (id: string) => {
+    try {
+      setLoading(true);
+      await ApiClient.deleteStudySession(id);
+      await fetchSessions();
+    } catch (error) {
+      console.error("Failed to delete study session:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  function getSessionsByCourse(courseId: string) {
+  const getSessionsByCourse = (courseId: string) => {
     return sessions.filter((s) => s.courseId === courseId);
-  }
+  };
 
   return (
     <StudySessionsContext.Provider
-      value={{ sessions, addSession, removeSession, getSessionsByCourse }}
+      value={{
+        sessions,
+        loading,
+        refreshSessions,
+        addSession,
+        removeSession,
+        getSessionsByCourse,
+      }}
     >
       {children}
     </StudySessionsContext.Provider>

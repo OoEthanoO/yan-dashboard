@@ -84,6 +84,16 @@ export class ApiClient {
   static async syncData(assignments, courses, studySessions) {
     const lastSyncTime = (await this.getLastSyncTime()) || new Date(0);
 
+    let deletedAssignmentIds = [];
+    try {
+      const deletedIdsStr = await AsyncStorage.getItem("deleted_assignments");
+      if (deletedIdsStr) {
+        deletedAssignmentIds = JSON.parse(deletedIdsStr);
+      }
+    } catch (error) {
+      console.error("Error retrieving deleted assignments:", error);
+    }
+
     const encryptedAssignments =
       await EncryptionService.processAssignmentsForSync(assignments);
     const encryptedCourses = await EncryptionService.processCoursesForSync(
@@ -94,8 +104,11 @@ export class ApiClient {
       assignments: encryptedAssignments,
       courses: encryptedCourses,
       studySessions,
+      deletedAssignmentIds,
       lastSyncTime,
     });
+
+    await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
 
     await this.setLastSyncTime(response.lastSync);
 
@@ -133,15 +146,11 @@ export class ApiClient {
   }
 
   static async getAiSuggestions(assignments, courses, studySessions) {
-    const encryptedAssignments =
-      await EncryptionService.processAssignmentsForSync(assignments);
-    const encryptedCourses = await EncryptionService.processCoursesForSync(
-      courses
-    );
-
+    // For AI suggestions, send unencrypted data directly
+    // This will avoid the need for server decryption
     return await this.request("/suggestions", "POST", {
-      assignments: encryptedAssignments,
-      courses: encryptedCourses,
+      assignments,
+      courses,
       studySessions,
     });
   }
@@ -149,5 +158,46 @@ export class ApiClient {
   static async updateUser(data) {
     const response = await this.request("/auth/update", "POST", data);
     return response.user;
+  }
+
+  static async createAssignment(assignment) {
+    return await this.request("/assignments", "POST", assignment);
+  }
+
+  static async updateAssignment(id, updatedData) {
+    return await this.request(`/assignments/${id}`, "PUT", updatedData);
+  }
+
+  static async deleteAssignment(id) {
+    return await this.request(`/assignments/${id}`, "DELETE");
+  }
+
+  static async createCourse(course) {
+    return await this.request("/courses", "POST", course);
+  }
+
+  static async updateCourse(id, updatedData) {
+    return await this.request(`/courses/${id}`, "PUT", updatedData);
+  }
+
+  static async deleteCourse(id) {
+    return await this.request(`/courses/${id}`, "DELETE");
+  }
+
+  static async createStudySession(session) {
+    return await this.request("/study-sessions", "POST", session);
+  }
+
+  static async deleteStudySession(id) {
+    return await this.request(`/study-sessions/${id}`, "DELETE");
+  }
+
+  // Add this after your other ApiClient methods
+  static async updateUserEncryptionKey(encryptedKey) {
+    return await this.request("/auth/encryption-key", "POST", { encryptedKey });
+  }
+
+  static async getUserEncryptionKey() {
+    return await this.request("/auth/encryption-key");
   }
 }

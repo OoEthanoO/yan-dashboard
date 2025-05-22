@@ -7,23 +7,16 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const OpenAI = require("openai");
-const {
-  decryptInSecureEnvironment,
-  validateDecryptedData,
-} = require("./secure-decryption");
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
 mongoose
-  .connect(
-    process.env.MONGODB_URI || "mongodb://localhost:27017/yan-dashboard",
-    {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    }
-  )
+  .connect(process.env.MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
@@ -36,6 +29,7 @@ const UserSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     name: { type: String, required: true },
+    encryptionKey: { type: String },
     createdAt: { type: Date, default: Date.now },
     lastSync: { type: Date, default: Date.now },
   },
@@ -53,7 +47,7 @@ const AssignmentSchema = new mongoose.Schema(
     dueDate: { type: String, required: true },
     description: { type: String },
     courseId: { type: String, required: true },
-    grade: { type: Number },
+    grade: { type: String },
     completed: { type: Boolean, default: false },
     syncId: { type: String, required: true },
   },
@@ -68,11 +62,11 @@ const CourseSchema = new mongoose.Schema(
       required: true,
     },
     name: { type: String, required: true },
-    grade: { type: Number },
+    grade: { type: String },
     gradeHistory: [
       {
         date: String,
-        grade: Number,
+        grade: String,
       },
     ],
     syncId: { type: String, required: true },
@@ -218,10 +212,26 @@ app.get("/api/auth/me", authenticate, (req, res) => {
 
 app.post("/api/sync", authenticate, async (req, res) => {
   try {
-    const { assignments, courses, studySessions, lastSyncTime } = req.body;
+    const {
+      assignments,
+      courses,
+      studySessions,
+      lastSyncTime,
+      deletedAssignmentIds,
+    } = req.body;
     const userId = req.user._id;
     const clientLastSync = new Date(lastSyncTime || 0);
     const serverLastSync = req.user.lastSync;
+
+    if (
+      deletedAssignmentIds &&
+      Array.isArray(deletedAssignmentIds) &&
+      deletedAssignmentIds.length > 0
+    ) {
+      for (const id of deletedAssignmentIds) {
+        await Assignment.findOneAndDelete({ userId, syncId: id });
+      }
+    }
 
     if (assignments && Array.isArray(assignments)) {
       for (const assignment of assignments) {
@@ -368,12 +378,27 @@ app.get("/api/data", authenticate, async (req, res) => {
         courseId: a.courseId,
         grade: a.grade,
         completed: a.completed,
+        // Mark as encrypted if grade exists
+        isGradeEncrypted:
+          a.grade && typeof a.grade === "string" && a.grade.length > 3,
       })),
       courses: courses.map((c) => ({
         id: c.syncId,
         name: c.name,
         grade: c.grade,
-        gradeHistory: c.gradeHistory,
+        // Mark as encrypted if grade exists
+        isGradeEncrypted:
+          c.grade && typeof c.grade === "string" && c.grade.length > 3,
+        gradeHistory:
+          c.gradeHistory?.map((point) => ({
+            date: point.date,
+            grade: point.grade,
+            // Mark grade history points as encrypted
+            isEncrypted:
+              point.grade &&
+              typeof point.grade === "string" &&
+              point.grade.length > 3,
+          })) || [],
       })),
       studySessions: studySessions.map((s) => ({
         id: s.syncId,
@@ -394,35 +419,10 @@ app.post("/api/suggestions", authenticate, async (req, res) => {
     let { assignments, courses, studySessions } = req.body;
     const userId = req.user._id;
 
-    const decryptedData = await decryptInSecureEnvironment({
-      assignments,
-      courses,
-      studySessions,
-    });
-
-    const validationResult = validateDecryptedData(decryptedData);
-    if (!validationResult.fullyDecrypted) {
-      console.warn("Some data could not be fully decrypted:", validationResult);
-    }
-
-    assignments = decryptedData.assignments;
-    courses = decryptedData.courses;
-    studySessions = decryptedData.studySessions;
-
     if (!assignments || !courses || !studySessions) {
       assignments = await Assignment.find({ userId });
       courses = await Course.find({ userId });
       studySessions = await StudySession.find({ userId });
-
-      const dbDecryptedData = await decryptInSecureEnvironment({
-        assignments,
-        courses,
-        studySessions,
-      });
-
-      assignments = dbDecryptedData.assignments;
-      courses = dbDecryptedData.courses;
-      studySessions = dbDecryptedData.studySessions;
 
       assignments = assignments.map((a) => ({
         id: a.syncId,
@@ -588,6 +588,267 @@ BASED ON THE ABOVE REAL DATA, provide 5 specific, personalized productivity sugg
   } catch (err) {
     console.error("AI suggestions error:", err);
     res.status(500).json({ error: "AI suggestion failed" });
+  }
+});
+
+// Add these endpoints after the existing routes but before the PORT definition
+
+// Assignment endpoints
+app.post("/api/assignments", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const assignmentData = req.body;
+
+    // Generate a unique ID for the assignment
+    const syncId = new mongoose.Types.ObjectId().toString();
+
+    const assignment = new Assignment({
+      userId,
+      title: assignmentData.title,
+      dueDate: assignmentData.dueDate,
+      description: assignmentData.description || "",
+      courseId: assignmentData.courseId,
+      grade: assignmentData.grade, // Could be encrypted
+      isGradeEncrypted: assignmentData.isGradeEncrypted || false,
+      completed: assignmentData.completed || false,
+      syncId,
+    });
+
+    await assignment.save();
+
+    // Send back the potentially encrypted grade
+    res.status(201).json({
+      id: syncId,
+      title: assignment.title,
+      dueDate: assignment.dueDate,
+      description: assignment.description,
+      courseId: assignment.courseId,
+      grade: assignment.grade,
+      isGradeEncrypted: assignment.isGradeEncrypted,
+      completed: assignment.completed,
+    });
+  } catch (err) {
+    console.error("Create assignment error:", err);
+    res.status(500).json({ error: "Failed to create assignment" });
+  }
+});
+
+app.put("/api/assignments/:id", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const syncId = req.params.id;
+    const updatedData = req.body;
+
+    const assignment = await Assignment.findOneAndUpdate(
+      { userId, syncId },
+      updatedData,
+      { new: true }
+    );
+
+    if (!assignment) {
+      return res.status(404).json({ error: "Assignment not found" });
+    }
+
+    res.json({
+      id: assignment.syncId,
+      title: assignment.title,
+      dueDate: assignment.dueDate,
+      description: assignment.description,
+      courseId: assignment.courseId,
+      grade: assignment.grade,
+      completed: assignment.completed,
+    });
+  } catch (err) {
+    console.error("Update assignment error:", err);
+    res.status(500).json({ error: "Failed to update assignment" });
+  }
+});
+
+app.delete("/api/assignments/:id", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const syncId = req.params.id;
+
+    const assignment = await Assignment.findOneAndDelete({ userId, syncId });
+
+    if (!assignment) {
+      return res.status(404).json({ error: "Assignment not found" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete assignment error:", err);
+    res.status(500).json({ error: "Failed to delete assignment" });
+  }
+});
+
+// Course endpoints
+app.post("/api/courses", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const courseData = req.body;
+
+    // Generate a unique ID for the course
+    const syncId = new mongoose.Types.ObjectId().toString();
+
+    const course = new Course({
+      userId,
+      name: courseData.name,
+      grade: courseData.grade, // Could be encrypted
+      isGradeEncrypted: courseData.isGradeEncrypted || false,
+      gradeHistory: courseData.gradeHistory || [], // Could contain encrypted points
+      syncId,
+    });
+
+    await course.save();
+
+    res.status(201).json({
+      id: syncId,
+      name: course.name,
+      grade: course.grade,
+      isGradeEncrypted: course.isGradeEncrypted,
+      gradeHistory: course.gradeHistory,
+    });
+  } catch (err) {
+    console.error("Create course error:", err);
+    res.status(500).json({ error: "Failed to create course" });
+  }
+});
+
+app.put("/api/courses/:id", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const syncId = req.params.id;
+    const updatedData = req.body;
+
+    const course = await Course.findOneAndUpdate(
+      { userId, syncId },
+      updatedData,
+      { new: true }
+    );
+
+    if (!course) {
+      return res.status(404).json({ error: "Course not found" });
+    }
+
+    res.json({
+      id: course.syncId,
+      name: course.name,
+      grade: course.grade,
+      gradeHistory: course.gradeHistory,
+    });
+  } catch (err) {
+    console.error("Update course error:", err);
+    res.status(500).json({ error: "Failed to update course" });
+  }
+});
+
+app.delete("/api/courses/:id", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const syncId = req.params.id;
+
+    const course = await Course.findOneAndDelete({ userId, syncId });
+
+    if (!course) {
+      return res.status(404).json({ error: "Course not found" });
+    }
+
+    // Delete all assignments associated with this course
+    await Assignment.deleteMany({ userId, courseId: syncId });
+
+    // Delete all study sessions associated with this course
+    await StudySession.deleteMany({ userId, courseId: syncId });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete course error:", err);
+    res.status(500).json({ error: "Failed to delete course" });
+  }
+});
+
+// Study session endpoints
+app.post("/api/study-sessions", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const sessionData = req.body;
+
+    // Generate a unique ID for the study session
+    const syncId = new mongoose.Types.ObjectId().toString();
+
+    const studySession = new StudySession({
+      userId,
+      courseId: sessionData.courseId,
+      date: sessionData.date,
+      durationMinutes: sessionData.durationMinutes,
+      notes: sessionData.notes || "",
+      syncId,
+    });
+
+    await studySession.save();
+
+    res.status(201).json({
+      id: syncId,
+      courseId: studySession.courseId,
+      date: studySession.date,
+      durationMinutes: studySession.durationMinutes,
+      notes: studySession.notes,
+    });
+  } catch (err) {
+    console.error("Create study session error:", err);
+    res.status(500).json({ error: "Failed to create study session" });
+  }
+});
+
+app.delete("/api/study-sessions/:id", authenticate, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const syncId = req.params.id;
+
+    const studySession = await StudySession.findOneAndDelete({
+      userId,
+      syncId,
+    });
+
+    if (!studySession) {
+      return res.status(404).json({ error: "Study session not found" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete study session error:", err);
+    res.status(500).json({ error: "Failed to delete study session" });
+  }
+});
+
+app.post("/api/auth/encryption-key", authenticate, async (req, res) => {
+  try {
+    const { encryptedKey } = req.body;
+
+    if (!encryptedKey) {
+      return res.status(400).json({ error: "Encryption key is required" });
+    }
+
+    // Store the encrypted key in the user's record
+    req.user.encryptionKey = encryptedKey;
+    await req.user.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Encryption key update error:", err);
+    res.status(500).json({ error: "Failed to update encryption key" });
+  }
+});
+
+app.get("/api/auth/encryption-key", authenticate, async (req, res) => {
+  try {
+    // Return the user's encrypted key
+    res.json({
+      encryptedKey: req.user.encryptionKey || null,
+    });
+  } catch (err) {
+    console.error("Encryption key retrieval error:", err);
+    res.status(500).json({ error: "Failed to retrieve encryption key" });
   }
 });
 

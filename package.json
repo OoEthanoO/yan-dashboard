@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "electron-dev": "expo start --web & sleep 5 && ELECTRON_START_URL=http://localhost:8081 electron electron.js",
-    "electron-build": "expo export && electron-builder build --publish never"
+    "electron-build": "expo export && electron-builder build --publish never",
+    "test": "jest"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
@@ -41,6 +42,7 @@
     "expo-updates": "^0.28.13",
     "expo-web-browser": "~14.1.6",
     "express": "^5.1.0",
+    "jest": "^29.7.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.0",
     "openai": "^4.98.0",
@@ -59,6 +61,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@types/crypto-js": "^4.2.2",
     "@types/react": "~19.0.10",
     "@types/react-native": "^0.72.8",
     "electron": "^36.2.0",

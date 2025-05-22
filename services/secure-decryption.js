@@ -17,8 +17,22 @@ exports.decryptInSecureEnvironment = async (encryptedData) => {
   const decryptedAssignments = assignments.map((assignment) => {
     if (assignment && assignment.isGradeEncrypted && assignment.grade) {
       try {
+        console.log(
+          `[SERVER-DECRYPT] Input assignment grade: ${assignment.grade.substring(
+            0,
+            20
+          )}... for ${assignment.title || assignment.id} (isGradeEncrypted: ${
+            assignment.isGradeEncrypted
+          })`
+        );
         const bytes = CryptoJS.AES.decrypt(assignment.grade, AI_PRIVATE_KEY);
-        const decryptedGrade = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+        const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+        console.log(`[SERVER-DECRYPT] Decrypted string: ${decryptedString}`);
+
+        const decryptedGrade = JSON.parse(decryptedString);
+        console.log(
+          `[SERVER-DECRYPT] Parsed grade: ${decryptedGrade} (type: ${typeof decryptedGrade})`
+        );
 
         return {
           ...assignment,
@@ -26,7 +40,12 @@ exports.decryptInSecureEnvironment = async (encryptedData) => {
           isGradeEncrypted: false,
         };
       } catch (error) {
-        console.error("Error decrypting assignment grade:", error);
+        console.error(
+          `Error decrypting assignment grade for ${
+            assignment.title || assignment.id
+          }:`,
+          error
+        );
         return {
           ...assignment,
           grade: null,

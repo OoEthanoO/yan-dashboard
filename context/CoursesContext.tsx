@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -6,10 +5,13 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import { ApiClient } from "../services/api-client";
+import { EncryptionService } from "../services/encryption-service";
 
 export type GradePoint = {
   date: string;
   grade: number;
+  isEncrypted?: boolean;
 };
 
 export type Course = {
@@ -17,17 +19,24 @@ export type Course = {
   name: string;
   grade?: number;
   gradeHistory?: GradePoint[];
+  isGradeEncrypted?: boolean;
 };
 
 type CoursesContextType = {
   courses: Course[];
-  addCourse: (course: Omit<Course, "id">) => void;
-  removeCourse: (id: string) => void;
-  setCourseGrade: (id: string, grade: string | number | undefined) => void;
-  updateCourseGradeHistory: (id: string, gradeHistory: GradePoint[]) => void;
+  loading: boolean;
+  refreshCourses: () => Promise<void>;
+  addCourse: (course: Omit<Course, "id">) => Promise<void>;
+  removeCourse: (id: string) => Promise<void>;
+  setCourseGrade: (
+    id: string,
+    grade: string | number | undefined
+  ) => Promise<void>;
+  updateCourseGradeHistory: (
+    id: string,
+    gradeHistory: GradePoint[]
+  ) => Promise<void>;
 };
-
-const STORAGE_KEY = "courses";
 
 const CoursesContext = createContext<CoursesContextType | undefined>(undefined);
 
@@ -39,106 +48,206 @@ export function useCourses() {
 
 export function CoursesProvider({ children }: { children: ReactNode }) {
   const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
-      if (data) {
-        const parsedCourses = JSON.parse(data);
-        const coursesWithNumericGrades = parsedCourses.map((c: Course) => ({
+  const fetchCourses = async () => {
+    try {
+      setLoading(true);
+      const data = await ApiClient.getAllData();
+      if (data?.courses) {
+        // Courses should already be decrypted by ApiClient.getAllData()
+        const coursesWithNumericGrades = data.courses.map((c: Course) => ({
           ...c,
           grade: c.grade !== undefined ? Number(c.grade) : undefined,
+          isGradeEncrypted: false, // Mark as decrypted for client usage
+          gradeHistory: c.gradeHistory?.map((point) => ({
+            ...point,
+            grade: Number(point.grade),
+            isEncrypted: false, // Mark as decrypted
+          })),
         }));
         setCourses(coursesWithNumericGrades);
-      } else
-        setCourses([
-          { id: "1", name: "Math" },
-          { id: "2", name: "Science" },
-        ]);
-    });
+      }
+    } catch (error) {
+      console.error("Failed to fetch courses:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial data load
+  useEffect(() => {
+    fetchCourses();
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(courses));
-  }, [courses]);
+  const refreshCourses = async () => {
+    await fetchCourses();
+  };
 
-  function addCourse(course: Omit<Course, "id">) {
-    setCourses((prev) => [
-      ...prev,
-      { ...course, id: Math.random().toString(36).slice(2) },
-    ]);
-  }
+  const addCourse = async (course: Omit<Course, "id">) => {
+    try {
+      setLoading(true);
 
-  function removeCourse(id: string) {
-    setCourses((prev) => prev.filter((c) => c.id !== id));
-  }
+      // Encrypt grade if present
+      let dataToSend = { ...course };
 
-  function setCourseGrade(id: string, grade: string | number | undefined) {
-    if (
-      grade === undefined ||
-      (typeof grade === "string" && grade.trim() === "")
-    ) {
-      setCourses((prev) =>
-        prev.map((c) => {
-          if (c.id === id) {
-            return {
-              ...c,
-              grade: undefined,
-            };
-          }
-          return c;
-        })
-      );
-      return;
+      if (dataToSend.grade !== undefined) {
+        dataToSend.grade = await EncryptionService.encryptGradeData(
+          dataToSend.grade
+        );
+        dataToSend.isGradeEncrypted = true;
+      }
+
+      // Encrypt grade history points if present
+      if (dataToSend.gradeHistory && dataToSend.gradeHistory.length > 0) {
+        dataToSend.gradeHistory = await Promise.all(
+          dataToSend.gradeHistory.map(async (point) => ({
+            date: point.date,
+            grade: await EncryptionService.encryptGradeData(point.grade),
+            isEncrypted: true,
+          }))
+        );
+      }
+
+      await ApiClient.createCourse(dataToSend);
+      await fetchCourses();
+    } catch (error) {
+      console.error("Failed to add course:", error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const numericGrade = typeof grade === "string" ? Number(grade) : grade;
+  const removeCourse = async (id: string) => {
+    try {
+      setLoading(true);
+      await ApiClient.deleteCourse(id);
+      await fetchCourses();
+    } catch (error) {
+      console.error("Failed to remove course:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    setCourses((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
+  const setCourseGrade = async (
+    id: string,
+    grade: string | number | undefined
+  ) => {
+    try {
+      setLoading(true);
+
+      // Clear grade if undefined or empty string
+      if (
+        grade === undefined ||
+        (typeof grade === "string" && grade.trim() === "")
+      ) {
+        await ApiClient.updateCourse(id, {
+          grade: undefined,
+          isGradeEncrypted: false,
+        });
+      } else {
+        // Set numeric grade and update history
+        const numericGrade = typeof grade === "string" ? Number(grade) : grade;
+
+        // Get course to add to grade history
+        const course = courses.find((c) => c.id === id);
+        if (course) {
+          const encryptedGrade = await EncryptionService.encryptGradeData(
+            numericGrade
+          );
+
           const newGradePoint = {
             date: new Date().toISOString(),
-            grade: isNaN(numericGrade) ? 0 : numericGrade,
+            grade: await EncryptionService.encryptGradeData(
+              numericGrade as number
+            ),
+            isEncrypted: true,
           };
 
-          return {
-            ...c,
-            grade: isNaN(numericGrade) ? undefined : numericGrade,
-            gradeHistory: [...(c.gradeHistory || []), newGradePoint],
-          };
+          console.log("New grade point:", newGradePoint);
+
+          const updatedGradeHistory = [
+            ...(course.gradeHistory || []),
+            newGradePoint,
+          ];
+
+          // Ensure all grade history points are encrypted
+          const encryptedHistory = await Promise.all(
+            updatedGradeHistory.map(async (point) => ({
+              date: point.date,
+              grade: await EncryptionService.encryptGradeData(point.grade),
+              isEncrypted: true,
+            }))
+          );
+
+          await ApiClient.updateCourse(id, {
+            grade: encryptedGrade,
+            isGradeEncrypted: true,
+            gradeHistory: encryptedHistory,
+          });
         }
-        return c;
-      })
-    );
-  }
+      }
 
-  function updateCourseGradeHistory(id: string, gradeHistory: GradePoint[]) {
-    setCourses((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          const currentGrade =
-            gradeHistory.length > 0
-              ? gradeHistory.sort(
-                  (a, b) =>
-                    new Date(b.date).getTime() - new Date(a.date).getTime()
-                )[0].grade
-              : undefined;
+      await fetchCourses();
+    } catch (error) {
+      console.error("Failed to update course grade:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-          return {
-            ...c,
-            gradeHistory,
-            grade: currentGrade,
-          };
-        }
-        return c;
-      })
-    );
-  }
+  const updateCourseGradeHistory = async (
+    id: string,
+    gradeHistory: GradePoint[]
+  ) => {
+    try {
+      console.log("Updating course grade history:", id, gradeHistory);
+      setLoading(true);
+
+      // Encrypt all grade history points
+      const encryptedHistory = await Promise.all(
+        gradeHistory.map(async (point) => ({
+          date: point.date,
+          grade: await EncryptionService.encryptGradeData(point.grade),
+          isEncrypted: true,
+        }))
+      );
+
+      // Update grade to latest entry if available
+      let encryptedCurrentGrade;
+      let encryptedGradeFlag = false;
+
+      if (gradeHistory.length > 0) {
+        const latestPoint = gradeHistory.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        )[0];
+        encryptedCurrentGrade = await EncryptionService.encryptGradeData(
+          latestPoint.grade
+        );
+        encryptedGradeFlag = true;
+      }
+
+      await ApiClient.updateCourse(id, {
+        gradeHistory: encryptedHistory,
+        grade: encryptedCurrentGrade,
+        isGradeEncrypted: encryptedGradeFlag,
+      });
+
+      await fetchCourses();
+    } catch (error) {
+      console.error("Failed to update course grade history:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <CoursesContext.Provider
       value={{
         courses,
+        loading,
+        refreshCourses,
         addCourse,
         removeCourse,
         setCourseGrade,

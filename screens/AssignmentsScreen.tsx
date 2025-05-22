@@ -1,3 +1,4 @@
+import GradeTrendChart from "@/components/GradeTrendChart";
 import { useStudySessions } from "@/context/StudySessionsContext";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -17,8 +18,7 @@ import {
 } from "react-native";
 import DatePicker from "../components/DatePicker";
 import { Assignment, useAssignments } from "../context/AssignmentsContext";
-import { Course, GradePoint, useCourses } from "../context/CoursesContext";
-import GradeTrendChart from "@/components/GradeTrendChart";
+import { useCourses } from "../context/CoursesContext";
 
 export default function AssignmentsScreen() {
   const {

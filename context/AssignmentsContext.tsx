@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -6,6 +5,8 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import { ApiClient } from "../services/api-client";
+import { EncryptionService } from "../services/encryption-service";
 
 export type Assignment = {
   id: string;
@@ -15,21 +16,25 @@ export type Assignment = {
   courseId: string;
   grade?: number;
   completed?: boolean;
+  isGradeEncrypted?: boolean;
 };
 
 type AssignmentsContextType = {
   assignments: Assignment[];
-  addAssignment: (a: Omit<Assignment, "id">) => void;
-  removeAssignment: (id: string) => void;
-  setAssignmentGrade: (id: string, grade: string | number | undefined) => void;
-  toggleAssignmentCompleted: (id: string) => void;
+  loading: boolean;
+  refreshAssignments: () => Promise<void>;
+  addAssignment: (a: Omit<Assignment, "id">) => Promise<void>;
+  removeAssignment: (id: string) => Promise<void>;
+  setAssignmentGrade: (
+    id: string,
+    grade: string | number | undefined
+  ) => Promise<void>;
+  toggleAssignmentCompleted: (id: string) => Promise<void>;
   updateAssignment: (
     id: string,
     updatedAssignment: Partial<Assignment>
-  ) => void;
+  ) => Promise<void>;
 };
-
-const STORAGE_KEY = "assignments";
 
 const AssignmentsContext = createContext<AssignmentsContextType | undefined>(
   undefined
@@ -44,89 +49,178 @@ export function useAssignments() {
 
 export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
-      if (data) {
-        const parsedAssignments = JSON.parse(data);
-        const assignmentsWithNumericGrades = parsedAssignments.map(
+  const fetchAssignments = async () => {
+    try {
+      setLoading(true);
+      const data = await ApiClient.getAllData();
+      if (data?.assignments) {
+        // Assignments should already be decrypted by ApiClient.getAllData()
+        const assignmentsWithNumericGrades = data.assignments.map(
           (a: Assignment) => ({
             ...a,
             grade: a.grade !== undefined ? Number(a.grade) : undefined,
+            isGradeEncrypted: false, // Mark as decrypted for client usage
           })
         );
         setAssignments(assignmentsWithNumericGrades);
       }
-    });
+    } catch (error) {
+      console.error("Failed to fetch assignments:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Initial data load
+  useEffect(() => {
+    fetchAssignments();
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(assignments));
-  }, [assignments]);
+  const refreshAssignments = async () => {
+    await fetchAssignments();
+  };
 
-  function addAssignment(a: Omit<Assignment, "id">) {
-    setAssignments((prev) => [
-      ...prev,
-      { ...a, id: Math.random().toString(36).slice(2) },
-    ]);
-  }
+  const addAssignment = async (assignment: Omit<Assignment, "id">) => {
+    try {
+      setLoading(true);
+      // encrypt grade
+      if (assignment.grade !== undefined) {
+        const encryptedGrade =
+          typeof assignment.grade === "string"
+            ? await EncryptionService.encryptGradeData(Number(assignment.grade))
+            : await EncryptionService.encryptGradeData(assignment.grade);
 
-  function removeAssignment(id: string) {
-    setAssignments((prev) => prev.filter((a) => a.id !== id));
-  }
+        assignment = {
+          ...assignment,
+          grade: encryptedGrade,
+          isGradeEncrypted: true,
+        };
+      }
 
-  function setAssignmentGrade(id: string, grade: string | number | undefined) {
-    const numericGrade =
-      grade === undefined
-        ? undefined
-        : typeof grade === "string"
-        ? Number(grade)
-        : grade;
-
-    setAssignments((prev) =>
-      prev.map((a) => {
-        if (a.id === id) {
-          const dueDate = new Date(a.dueDate);
-          const now = new Date();
-
-          if (dueDate <= now || a.completed) {
-            return {
-              ...a,
-              grade: numericGrade,
-            };
-          } else {
-            console.warn("Cannot grade future assignments");
-            return a;
-          }
-        }
-        return a;
-      })
-    );
-  }
-
-  function toggleAssignmentCompleted(id: string) {
-    setAssignments((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, completed: !a.completed } : a))
-    );
-  }
-
-  function updateAssignment(id: string, updatedData: Partial<Assignment>) {
-    if (
-      updatedData.grade !== undefined &&
-      typeof updatedData.grade === "string"
-    ) {
-      updatedData.grade = Number(updatedData.grade);
+      await ApiClient.createAssignment(assignment);
+      await fetchAssignments();
+    } catch (error) {
+      console.error("Failed to add assignment:", error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    setAssignments((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, ...updatedData } : a))
-    );
-  }
+  const removeAssignment = async (id: string) => {
+    try {
+      setLoading(true);
+      await ApiClient.deleteAssignment(id);
+      await fetchAssignments();
+    } catch (error) {
+      console.error("Failed to delete assignment:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setAssignmentGrade = async (
+    id: string,
+    grade: string | number | undefined
+  ) => {
+    try {
+      setLoading(true);
+      const numericGrade =
+        grade === undefined
+          ? undefined
+          : typeof grade === "string"
+          ? Number(grade)
+          : grade;
+
+      const dueDate = assignments.find((a) => a.id === id)?.dueDate;
+      if (dueDate) {
+        const now = new Date();
+        if (new Date(dueDate) <= now) {
+          // Only send grade data - will be encrypted in backend
+          const encryptedGrade =
+            numericGrade !== undefined
+              ? await EncryptionService.encryptGradeData(numericGrade)
+              : undefined;
+
+          await ApiClient.updateAssignment(id, {
+            grade: encryptedGrade,
+            isGradeEncrypted: encryptedGrade !== undefined,
+          });
+        } else {
+          console.warn("Cannot grade future assignments");
+        }
+      }
+
+      await fetchAssignments();
+    } catch (error) {
+      console.error("Failed to update assignment grade:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleAssignmentCompleted = async (id: string) => {
+    try {
+      setLoading(true);
+      const assignment = assignments.find((a) => a.id === id);
+      if (assignment) {
+        await ApiClient.updateAssignment(id, {
+          completed: !assignment.completed,
+        });
+      }
+      await fetchAssignments();
+    } catch (error) {
+      console.error("Failed to toggle assignment completion:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateAssignment = async (
+    id: string,
+    updatedData: Partial<Assignment>
+  ) => {
+    try {
+      setLoading(true);
+
+      // If grade is being updated, encrypt it
+      if (updatedData.grade !== undefined) {
+        let numericGrade: number | undefined;
+
+        if (typeof updatedData.grade === "string") {
+          numericGrade = Number(updatedData.grade);
+        } else {
+          numericGrade = updatedData.grade;
+        }
+
+        const encryptedGrade =
+          numericGrade !== undefined
+            ? await EncryptionService.encryptGradeData(numericGrade)
+            : undefined;
+
+        updatedData = {
+          ...updatedData,
+          grade: encryptedGrade,
+          isGradeEncrypted: encryptedGrade !== undefined,
+        };
+      }
+
+      await ApiClient.updateAssignment(id, updatedData);
+      await fetchAssignments();
+    } catch (error) {
+      console.error("Failed to update assignment:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AssignmentsContext.Provider
       value={{
         assignments,
+        loading,
+        refreshAssignments,
         addAssignment,
         removeAssignment,
         setAssignmentGrade,
