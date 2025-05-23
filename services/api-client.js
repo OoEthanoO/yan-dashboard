@@ -18,6 +18,10 @@ export class ApiClient {
   }
 
   static async getApiUrl() {
+    if (process.env.NODE_ENV === "production") {
+      return "/api";
+    }
+
     const isDebug = await this.isDebugMode();
     return isDebug ? DEV_API_URL : PROD_API_URL;
   }

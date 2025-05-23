@@ -11,7 +11,8 @@
     "lint": "expo lint",
     "electron-dev": "expo start --web & sleep 5 && ELECTRON_START_URL=http://localhost:8081 electron electron.js",
     "electron-build": "expo export && electron-builder build --publish never",
-    "test": "jest"
+    "test": "jest",
+    "build": "npx expo export --platform web --output-dir web-build"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
