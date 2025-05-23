@@ -1,21 +1,43 @@
-import React, { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
+  Platform,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  Platform,
+  View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "@/context/AuthContext";
-import { useRouter } from "expo-router";
+import { ApiClient } from "../services/api-client";
 
 export default function ProfileBar() {
   const { user, logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
   const router = useRouter();
+  const [isDebugMode, setIsDebugMode] = useState(false);
 
   if (!user) return null;
+
+  const checkDebugMode = useCallback(async () => {
+    const isDebug = await ApiClient.isDebugMode();
+    setIsDebugMode(isDebug);
+  }, []);
+
+  useEffect(() => {
+    checkDebugMode();
+
+    const interval = setInterval(checkDebugMode, 1000);
+    return () => clearInterval(interval);
+  }, [checkDebugMode]);
+
+  useEffect(() => {
+    const checkDebugMode = async () => {
+      const isDebug = await ApiClient.isDebugMode();
+      setIsDebugMode(isDebug);
+    };
+    checkDebugMode();
+  }, []);
 
   const getInitials = () => {
     if (!user?.name) return "?";
@@ -28,6 +50,9 @@ export default function ProfileBar() {
 
   return (
     <View style={styles.container}>
+      {isDebugMode && (
+        <Text style={{ color: "#ef4444", fontSize: 12 }}>DEBUG</Text>
+      )}
       <TouchableOpacity
         style={styles.profileButton}
         onPress={() => setMenuVisible(!menuVisible)}

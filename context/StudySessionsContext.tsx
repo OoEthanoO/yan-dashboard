@@ -7,7 +7,6 @@ import React, {
 } from "react";
 import { ApiClient } from "../services/api-client";
 
-// Study sessions don't contain grade data, so no encryption needed for this context
 export type StudySession = {
   id: string;
   courseId: string;
@@ -56,7 +55,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Initial data load
   useEffect(() => {
     fetchSessions();
   }, []);

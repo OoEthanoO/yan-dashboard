@@ -81,18 +81,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const user = await ApiClient.login(email, password);
 
-      // Store password hash for encryption key retrieval
-      // We use it only for local encryption operations, never send this to server
       const passwordHash = CryptoJS.SHA256(password).toString();
       await AsyncStorage.setItem("password_hash", passwordHash);
 
-      // Try to retrieve the encryption key from server
-      // (for when logging in on a new device)
       await EncryptionService.retrieveEncryptionKeyFromServer();
 
       setUser(user);
 
-      // Keep the syncData call from your original function
       await syncData();
 
       return user;

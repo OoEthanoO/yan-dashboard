@@ -1,11 +1,27 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EncryptionService } from "./encryption-service";
 
-const API_URL = "http://localhost:4000/api";
+const DEBUG_MODE_KEY = "debug_mode";
+const PROD_API_URL = "https://yan-dashboard.onrender.com/api"; // Replace with your production URL
+const DEV_API_URL = "http://localhost:4000/api";
 const AUTH_TOKEN_KEY = "auth_token";
 const LAST_SYNC_KEY = "last_sync_time";
 
 export class ApiClient {
+  static async isDebugMode() {
+    const debugMode = await AsyncStorage.getItem(DEBUG_MODE_KEY);
+    return debugMode === "true";
+  }
+
+  static async setDebugMode(enabled) {
+    await AsyncStorage.setItem(DEBUG_MODE_KEY, enabled ? "true" : "false");
+  }
+
+  static async getApiUrl() {
+    const isDebug = await this.isDebugMode();
+    return isDebug ? DEV_API_URL : PROD_API_URL;
+  }
+
   static async getToken() {
     return await AsyncStorage.getItem(AUTH_TOKEN_KEY);
   }
@@ -29,9 +45,11 @@ export class ApiClient {
 
   static async request(endpoint, method = "GET", data = null) {
     const token = await this.getToken();
+    const API_URL = await this.getApiUrl();
 
     const headers = {
       "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
     };
 
     if (token) {
@@ -146,8 +164,6 @@ export class ApiClient {
   }
 
   static async getAiSuggestions(assignments, courses, studySessions) {
-    // For AI suggestions, send unencrypted data directly
-    // This will avoid the need for server decryption
     return await this.request("/suggestions", "POST", {
       assignments,
       courses,
@@ -192,7 +208,6 @@ export class ApiClient {
     return await this.request(`/study-sessions/${id}`, "DELETE");
   }
 
-  // Add this after your other ApiClient methods
   static async updateUserEncryptionKey(encryptedKey) {
     return await this.request("/auth/encryption-key", "POST", { encryptedKey });
   }

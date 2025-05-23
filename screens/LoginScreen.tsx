@@ -1,18 +1,19 @@
-import React, { useState } from "react";
+import { ApiClient } from "@/services/api-client";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import DisclaimerModal from "../components/DisclaimerModal";
+import { useAuth } from "../context/AuthContext";
 
 export default function LoginScreen() {
   const [isLogin, setIsLogin] = useState(true);
@@ -21,8 +22,34 @@ export default function LoginScreen() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [disclaimerVisible, setDisclaimerVisible] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugTapCount, setDebugTapCount] = useState(0);
 
   const { login, register, loading } = useAuth();
+
+  useEffect(() => {
+    const loadDebugMode = async () => {
+      const isDebug = await ApiClient.isDebugMode();
+      setDebugMode(isDebug);
+    };
+    loadDebugMode();
+  }, []);
+
+  const toggleDebugMode = async () => {
+    const newMode = !debugMode;
+    await ApiClient.setDebugMode(newMode);
+    setDebugMode(newMode);
+  };
+
+  const handleVersionTap = () => {
+    setDebugTapCount((prev) => {
+      if (prev >= 6) {
+        toggleDebugMode();
+        return 0;
+      }
+      return prev + 1;
+    });
+  };
 
   async function handleSubmit() {
     setError(null);
@@ -129,9 +156,12 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            © {new Date().getFullYear()} Yan Dashboard
-          </Text>
+          <TouchableOpacity onPress={handleVersionTap}>
+            <Text style={styles.footerText}>
+              © {new Date().getFullYear()} Yan Dashboard
+              {debugMode && " (Debug)"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 

@@ -56,12 +56,11 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       const data = await ApiClient.getAllData();
       if (data?.assignments) {
-        // Assignments should already be decrypted by ApiClient.getAllData()
         const assignmentsWithNumericGrades = data.assignments.map(
           (a: Assignment) => ({
             ...a,
             grade: a.grade !== undefined ? Number(a.grade) : undefined,
-            isGradeEncrypted: false, // Mark as decrypted for client usage
+            isGradeEncrypted: false,
           })
         );
         setAssignments(assignmentsWithNumericGrades);
@@ -73,7 +72,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Initial data load
   useEffect(() => {
     fetchAssignments();
   }, []);
@@ -85,7 +83,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const addAssignment = async (assignment: Omit<Assignment, "id">) => {
     try {
       setLoading(true);
-      // encrypt grade
       if (assignment.grade !== undefined) {
         const encryptedGrade =
           typeof assignment.grade === "string"
@@ -137,7 +134,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
       if (dueDate) {
         const now = new Date();
         if (new Date(dueDate) <= now) {
-          // Only send grade data - will be encrypted in backend
           const encryptedGrade =
             numericGrade !== undefined
               ? await EncryptionService.encryptGradeData(numericGrade)
@@ -184,7 +180,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // If grade is being updated, encrypt it
       if (updatedData.grade !== undefined) {
         let numericGrade: number | undefined;
 

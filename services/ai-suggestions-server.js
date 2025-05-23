@@ -12,6 +12,26 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  const method = req.method;
+  const url = req.originalUrl || req.url;
+  const ip = req.ip || req.connection.remoteAddress;
+  const userAgent = req.get("user-agent") || "Unknown";
+
+  console.log(`[${timestamp}] ${method} ${url} - IP: ${ip} - ${userAgent}`);
+
+  const startTime = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - startTime;
+    console.log(
+      `[${timestamp}] ${method} ${url} - Status: ${res.statusCode} - Duration: ${duration}ms`
+    );
+  });
+
+  next();
+});
+
 mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
@@ -378,7 +398,6 @@ app.get("/api/data", authenticate, async (req, res) => {
         courseId: a.courseId,
         grade: a.grade,
         completed: a.completed,
-        // Mark as encrypted if grade exists
         isGradeEncrypted:
           a.grade && typeof a.grade === "string" && a.grade.length > 3,
       })),
@@ -386,14 +405,12 @@ app.get("/api/data", authenticate, async (req, res) => {
         id: c.syncId,
         name: c.name,
         grade: c.grade,
-        // Mark as encrypted if grade exists
         isGradeEncrypted:
           c.grade && typeof c.grade === "string" && c.grade.length > 3,
         gradeHistory:
           c.gradeHistory?.map((point) => ({
             date: point.date,
             grade: point.grade,
-            // Mark grade history points as encrypted
             isEncrypted:
               point.grade &&
               typeof point.grade === "string" &&
@@ -591,15 +608,11 @@ BASED ON THE ABOVE REAL DATA, provide 5 specific, personalized productivity sugg
   }
 });
 
-// Add these endpoints after the existing routes but before the PORT definition
-
-// Assignment endpoints
 app.post("/api/assignments", authenticate, async (req, res) => {
   try {
     const userId = req.user._id;
     const assignmentData = req.body;
 
-    // Generate a unique ID for the assignment
     const syncId = new mongoose.Types.ObjectId().toString();
 
     const assignment = new Assignment({
@@ -608,7 +621,7 @@ app.post("/api/assignments", authenticate, async (req, res) => {
       dueDate: assignmentData.dueDate,
       description: assignmentData.description || "",
       courseId: assignmentData.courseId,
-      grade: assignmentData.grade, // Could be encrypted
+      grade: assignmentData.grade,
       isGradeEncrypted: assignmentData.isGradeEncrypted || false,
       completed: assignmentData.completed || false,
       syncId,
@@ -616,7 +629,6 @@ app.post("/api/assignments", authenticate, async (req, res) => {
 
     await assignment.save();
 
-    // Send back the potentially encrypted grade
     res.status(201).json({
       id: syncId,
       title: assignment.title,
@@ -682,21 +694,19 @@ app.delete("/api/assignments/:id", authenticate, async (req, res) => {
   }
 });
 
-// Course endpoints
 app.post("/api/courses", authenticate, async (req, res) => {
   try {
     const userId = req.user._id;
     const courseData = req.body;
 
-    // Generate a unique ID for the course
     const syncId = new mongoose.Types.ObjectId().toString();
 
     const course = new Course({
       userId,
       name: courseData.name,
-      grade: courseData.grade, // Could be encrypted
+      grade: courseData.grade,
       isGradeEncrypted: courseData.isGradeEncrypted || false,
-      gradeHistory: courseData.gradeHistory || [], // Could contain encrypted points
+      gradeHistory: courseData.gradeHistory || [],
       syncId,
     });
 
@@ -754,10 +764,8 @@ app.delete("/api/courses/:id", authenticate, async (req, res) => {
       return res.status(404).json({ error: "Course not found" });
     }
 
-    // Delete all assignments associated with this course
     await Assignment.deleteMany({ userId, courseId: syncId });
 
-    // Delete all study sessions associated with this course
     await StudySession.deleteMany({ userId, courseId: syncId });
 
     res.json({ success: true });
@@ -767,13 +775,11 @@ app.delete("/api/courses/:id", authenticate, async (req, res) => {
   }
 });
 
-// Study session endpoints
 app.post("/api/study-sessions", authenticate, async (req, res) => {
   try {
     const userId = req.user._id;
     const sessionData = req.body;
 
-    // Generate a unique ID for the study session
     const syncId = new mongoose.Types.ObjectId().toString();
 
     const studySession = new StudySession({
@@ -829,7 +835,6 @@ app.post("/api/auth/encryption-key", authenticate, async (req, res) => {
       return res.status(400).json({ error: "Encryption key is required" });
     }
 
-    // Store the encrypted key in the user's record
     req.user.encryptionKey = encryptedKey;
     await req.user.save();
 
@@ -842,7 +847,6 @@ app.post("/api/auth/encryption-key", authenticate, async (req, res) => {
 
 app.get("/api/auth/encryption-key", authenticate, async (req, res) => {
   try {
-    // Return the user's encrypted key
     res.json({
       encryptedKey: req.user.encryptionKey || null,
     });

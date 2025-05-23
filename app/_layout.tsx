@@ -1,11 +1,11 @@
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { CoursesProvider } from "@/context/CoursesContext";
+import LoginScreen from "@/screens/LoginScreen";
 import { Stack } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
+import "react-native-get-random-values";
 import { AssignmentsProvider } from "../context/AssignmentsContext";
 import { StudySessionsProvider } from "../context/StudySessionsContext";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { ActivityIndicator, View } from "react-native";
-import LoginScreen from "@/screens/LoginScreen";
-import ProfileBar from "@/components/ProfileBar";
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -35,13 +35,7 @@ function AppContent() {
         <StudySessionsProvider>
           <Stack
             screenOptions={{
-              headerRight: () => <ProfileBar />,
-              headerLeft: () => null,
-              headerStyle: {
-                backgroundColor: "#fff",
-              },
-              headerShadowVisible: false,
-              headerTitle: "",
+              headerShown: false,
             }}
           />
         </StudySessionsProvider>

@@ -5,14 +5,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ApiClient } from "./api-client";
 import { EncryptionService } from "./encryption-service";
 
-// Event system for notifying contexts of data changes
 type DataChangeListener = () => void;
 const listeners: DataChangeListener[] = [];
 
 export const SyncService = {
-  /**
-   * Register a listener for data changes
-   */
   subscribeToDataChanges: (listener: DataChangeListener) => {
     listeners.push(listener);
     return () => {
@@ -21,24 +17,16 @@ export const SyncService = {
     };
   },
 
-  /**
-   * Notify all listeners of data changes
-   */
   notifyDataChanged: () => {
     listeners.forEach((listener) => listener());
   },
 
-  /**
-   * Updates local data and then syncs all data with the server
-   * This is the main function that should be called after any data change
-   */
   updateAndSync: async (
     updatedAssignments?: Assignment[],
     updatedCourses?: Course[],
     updatedStudySessions?: StudySession[]
   ) => {
     try {
-      // First update local storage with the changes
       if (updatedAssignments) {
         await AsyncStorage.setItem(
           "assignments",
@@ -57,7 +45,6 @@ export const SyncService = {
         );
       }
 
-      // Then perform a full sync with the server
       return await SyncService.performFullSync();
     } catch (error) {
       console.error("Failed to update and sync data:", error);
@@ -65,27 +52,20 @@ export const SyncService = {
     }
   },
 
-  /**
-   * Syncs all data with the server - always gets all data types
-   * regardless of which was updated
-   */
   performFullSync: async () => {
     try {
-      // Get all data from storage
       const [assignmentsStr, coursesStr, studySessionsStr] = await Promise.all([
         AsyncStorage.getItem("assignments"),
         AsyncStorage.getItem("courses"),
         AsyncStorage.getItem("study_sessions"),
       ]);
 
-      // Parse the data
       const assignments = assignmentsStr ? JSON.parse(assignmentsStr) : [];
       const courses = coursesStr ? JSON.parse(coursesStr) : [];
       const studySessions = studySessionsStr
         ? JSON.parse(studySessionsStr)
         : [];
 
-      // Process data for sync (encryption, etc.)
       const processedAssignments =
         await EncryptionService.processAssignmentsForSync(assignments);
 
@@ -93,17 +73,14 @@ export const SyncService = {
         courses
       );
 
-      // Sync with server
       const response = await ApiClient.syncData(
         processedAssignments,
         processedCourses,
         studySessions
       );
 
-      // Handle deleted assignments
       await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
 
-      // Update local storage with the server response
       const storageUpdates = [];
 
       if (response?.assignments?.length > 0) {
@@ -132,7 +109,6 @@ export const SyncService = {
 
       await Promise.all(storageUpdates);
 
-      // Notify all contexts that data has changed
       SyncService.notifyDataChanged();
 
       return response;
@@ -142,9 +118,6 @@ export const SyncService = {
     }
   },
 
-  /**
-   * Legacy method for backward compatibility
-   */
   syncAllData: async (
     updatedAssignments?: Assignment[],
     updatedCourses?: Course[],
@@ -157,9 +130,6 @@ export const SyncService = {
     );
   },
 
-  /**
-   * Refresh all data from server
-   */
   refreshAllData: async () => {
     try {
       const data = await ApiClient.getAllData();

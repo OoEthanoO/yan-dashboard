@@ -1,16 +1,16 @@
 import React, { useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   Dimensions,
   Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import Svg, { Line, Circle, Path, Text as SvgText } from "react-native-svg";
-import { Course } from "../context/CoursesContext";
+import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { Assignment } from "../context/AssignmentsContext";
+import { Course } from "../context/CoursesContext";
 
 type DataPoint = {
   date: Date;

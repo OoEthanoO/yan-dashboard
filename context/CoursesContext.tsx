@@ -55,15 +55,14 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       const data = await ApiClient.getAllData();
       if (data?.courses) {
-        // Courses should already be decrypted by ApiClient.getAllData()
         const coursesWithNumericGrades = data.courses.map((c: Course) => ({
           ...c,
           grade: c.grade !== undefined ? Number(c.grade) : undefined,
-          isGradeEncrypted: false, // Mark as decrypted for client usage
+          isGradeEncrypted: false,
           gradeHistory: c.gradeHistory?.map((point) => ({
             ...point,
             grade: Number(point.grade),
-            isEncrypted: false, // Mark as decrypted
+            isEncrypted: false,
           })),
         }));
         setCourses(coursesWithNumericGrades);
@@ -75,7 +74,6 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Initial data load
   useEffect(() => {
     fetchCourses();
   }, []);
@@ -88,7 +86,6 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Encrypt grade if present
       let dataToSend = { ...course };
 
       if (dataToSend.grade !== undefined) {
@@ -98,7 +95,6 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         dataToSend.isGradeEncrypted = true;
       }
 
-      // Encrypt grade history points if present
       if (dataToSend.gradeHistory && dataToSend.gradeHistory.length > 0) {
         dataToSend.gradeHistory = await Promise.all(
           dataToSend.gradeHistory.map(async (point) => ({
@@ -135,9 +131,10 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     grade: string | number | undefined
   ) => {
     try {
+      console.log("Setting course grade:", id, grade);
+
       setLoading(true);
 
-      // Clear grade if undefined or empty string
       if (
         grade === undefined ||
         (typeof grade === "string" && grade.trim() === "")
@@ -147,10 +144,8 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
           isGradeEncrypted: false,
         });
       } else {
-        // Set numeric grade and update history
         const numericGrade = typeof grade === "string" ? Number(grade) : grade;
 
-        // Get course to add to grade history
         const course = courses.find((c) => c.id === id);
         if (course) {
           const encryptedGrade = await EncryptionService.encryptGradeData(
@@ -167,24 +162,25 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
           console.log("New grade point:", newGradePoint);
 
-          const updatedGradeHistory = [
-            ...(course.gradeHistory || []),
-            newGradePoint,
-          ];
-
-          // Ensure all grade history points are encrypted
           const encryptedHistory = await Promise.all(
-            updatedGradeHistory.map(async (point) => ({
+            course.gradeHistory?.map(async (point) => ({
               date: point.date,
               grade: await EncryptionService.encryptGradeData(point.grade),
               isEncrypted: true,
-            }))
+            })) || []
           );
+
+          const updatedGradeHistory = [
+            ...(encryptedHistory || []),
+            newGradePoint,
+          ];
+
+          console.log("Updated grade history:", updatedGradeHistory);
 
           await ApiClient.updateCourse(id, {
             grade: encryptedGrade,
             isGradeEncrypted: true,
-            gradeHistory: encryptedHistory,
+            gradeHistory: updatedGradeHistory,
           });
         }
       }
@@ -205,7 +201,6 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       console.log("Updating course grade history:", id, gradeHistory);
       setLoading(true);
 
-      // Encrypt all grade history points
       const encryptedHistory = await Promise.all(
         gradeHistory.map(async (point) => ({
           date: point.date,
@@ -214,7 +209,8 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         }))
       );
 
-      // Update grade to latest entry if available
+      console.log("Encrypted grade history:", encryptedHistory);
+
       let encryptedCurrentGrade;
       let encryptedGradeFlag = false;
 

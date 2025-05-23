@@ -1,21 +1,23 @@
-import React, { useState } from "react";
+import DisclaimerModal from "@/components/DisclaimerModal";
+import { useAuth } from "@/context/AuthContext";
+import { ApiClient } from "@/services/api-client";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import { useAuth } from "@/context/AuthContext";
-import DisclaimerModal from "@/components/DisclaimerModal";
 
 export default function AccountScreen() {
   const router = useRouter();
@@ -28,11 +30,26 @@ export default function AccountScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [disclaimerVisible, setDisclaimerVisible] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
+
+  useEffect(() => {
+    const loadDebugMode = async () => {
+      const isDebug = await ApiClient.isDebugMode();
+      setDebugMode(isDebug);
+    };
+    loadDebugMode();
+  }, []);
 
   if (!user) {
     router.replace("/");
     return null;
   }
+
+  const toggleDebugMode = async () => {
+    const newMode = !debugMode;
+    await ApiClient.setDebugMode(newMode);
+    setDebugMode(newMode);
+  };
 
   const handleUpdateProfile = async () => {
     if (name.trim().length < 2) {
@@ -266,6 +283,33 @@ export default function AccountScreen() {
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Developer Options</Text>
+
+            <TouchableOpacity
+              style={styles.securityItem}
+              onPress={toggleDebugMode}
+            >
+              <View style={styles.securityItemContent}>
+                <Ionicons name="code-working" size={24} color="#3b82f6" />
+                <View>
+                  <Text style={styles.securityItemTitle}>Debug Mode</Text>
+                  <Text style={styles.securityItemDescription}>
+                    {debugMode
+                      ? "Using local server (localhost)"
+                      : "Using production server"}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={debugMode}
+                onValueChange={toggleDebugMode}
+                trackColor={{ false: "#cbd5e1", true: "#93c5fd" }}
+                thumbColor={debugMode ? "#3b82f6" : "#f4f4f5"}
+              />
             </TouchableOpacity>
           </View>
 

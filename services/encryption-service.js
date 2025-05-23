@@ -1,59 +1,66 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import CryptoJS from "crypto-js";
+import { ApiClient } from "./api-client";
 
-// Base key used for encryption
 const AI_PUBLIC_KEY = "AI_MODEL_PUBLIC_KEY_2023";
 
-// Key for storing user encryption key in AsyncStorage
 const USER_ENCRYPTION_KEY = "user_encryption_key";
 
 export const EncryptionService = {
-  /**
-   * Gets or generates a user-specific encryption key
-   * This key will be synchronized across devices via the server
-   */
   getUserEncryptionKey: async () => {
-    // First try to get from local storage
-    let userKey = await AsyncStorage.getItem(USER_ENCRYPTION_KEY);
+    console.log(
+      "[GET_KEY] Attempting to get user encryption key from server first"
+    );
 
-    if (!userKey) {
-      // If no key exists, generate a new one
-      userKey = CryptoJS.lib.WordArray.random(256 / 8).toString();
-      await AsyncStorage.setItem(USER_ENCRYPTION_KEY, userKey);
+    let userKey = await EncryptionService.retrieveEncryptionKeyFromServer();
 
-      // IMPORTANT: This key should be sent to the server (encrypted with the user's password)
-      // to enable multi-device syncing - we'll handle this in a separate function
-      await EncryptionService.syncEncryptionKey(userKey);
+    if (userKey) {
+      console.log(
+        "[GET_KEY] Successfully retrieved encryption key from server"
+      );
+      return userKey;
     }
+
+    console.log("[GET_KEY] No key from server, checking local storage");
+    userKey = await AsyncStorage.getItem(USER_ENCRYPTION_KEY);
+
+    if (userKey) {
+      console.log("[GET_KEY] Found key in local storage, syncing to server");
+      await EncryptionService.syncEncryptionKey(userKey);
+      return userKey;
+    }
+
+    console.log("[GET_KEY] No key found, generating new encryption key");
+    userKey = CryptoJS.lib.WordArray.random(256 / 8).toString();
+    await AsyncStorage.setItem(USER_ENCRYPTION_KEY, userKey);
+
+    console.log("[GET_KEY] Syncing newly generated key to server");
+    await EncryptionService.syncEncryptionKey(userKey);
 
     return userKey;
   },
 
-  /**
-   * Synchronize the encryption key with the server
-   */
   syncEncryptionKey: async (userKey) => {
     try {
-      // Encrypt the key before sending to server (using password-derived key)
+      console.log("[SYNC_KEY] Attempting to sync encryption key to server");
       const passwordHash = await AsyncStorage.getItem("password_hash");
-      if (!passwordHash) return;
+      if (!passwordHash) {
+        console.error("[SYNC_KEY] No password hash found, cannot sync key");
+        return;
+      }
 
       const encryptedKey = CryptoJS.AES.encrypt(
         userKey,
         passwordHash
       ).toString();
 
-      // Send to server
       await ApiClient.updateUserEncryptionKey(encryptedKey);
+      console.log("[SYNC_KEY] Successfully synced encryption key to server");
     } catch (error) {
-      console.error("Failed to sync encryption key:", error);
+      console.error("[SYNC_KEY] Failed to sync encryption key:", error);
     }
   },
 
-  /**
-   * Retrieve user encryption key from server
-   * (called when logging in on a new device)
-   */
   retrieveEncryptionKeyFromServer: async () => {
     try {
       const response = await ApiClient.getUserEncryptionKey();
@@ -62,11 +69,9 @@ export const EncryptionService = {
         const passwordHash = await AsyncStorage.getItem("password_hash");
         if (!passwordHash) return null;
 
-        // Decrypt the key using password hash
         const bytes = CryptoJS.AES.decrypt(response.encryptedKey, passwordHash);
         const userKey = bytes.toString(CryptoJS.enc.Utf8);
 
-        // Save locally
         await AsyncStorage.setItem(USER_ENCRYPTION_KEY, userKey);
         return userKey;
       }
@@ -113,13 +118,11 @@ export const EncryptionService = {
       const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
 
       if (!decryptedString) {
-        // If decryption fails, we might be on a new device
         console.log(
           "[DECRYPT] Initial decryption failed, trying to retrieve key from server"
         );
         await EncryptionService.retrieveEncryptionKeyFromServer();
 
-        // Try again with the new key
         const newUserKey = await EncryptionService.getUserEncryptionKey();
         const newCombinedKey = `${AI_PUBLIC_KEY}_${newUserKey}`;
         const newBytes = CryptoJS.AES.decrypt(encryptedData, newCombinedKey);

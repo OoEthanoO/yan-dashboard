@@ -1,9 +1,13 @@
 import GradeTrendChart from "@/components/GradeTrendChart";
+import ProfileBar from "@/components/ProfileBar";
+import { useCourses } from "@/context/CoursesContext";
 import { useStudySessions } from "@/context/StudySessionsContext";
+import { ApiClient } from "@/services/api-client";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   Dimensions,
   FlatList,
   Modal,
@@ -18,7 +22,6 @@ import {
 } from "react-native";
 import DatePicker from "../components/DatePicker";
 import { Assignment, useAssignments } from "../context/AssignmentsContext";
-import { useCourses } from "../context/CoursesContext";
 
 export default function AssignmentsScreen() {
   const {
@@ -157,18 +160,13 @@ export default function AssignmentsScreen() {
   async function fetchAISuggestions() {
     setLoadingSuggestions(true);
     try {
-      const res = await fetch("http://localhost:4000/suggestions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          assignments,
-          courses,
-          studySessions: sessions,
-        }),
-      });
-      const data = await res.json();
-      const timestamp = new Date().toISOString();
+      const data = await ApiClient.getAiSuggestions(
+        assignments,
+        courses,
+        sessions
+      );
 
+      const timestamp = new Date().toISOString();
       setAiSuggestions(data.suggestions);
       setLastSuggestionTime(timestamp);
 
@@ -180,9 +178,34 @@ export default function AssignmentsScreen() {
         })
       );
     } catch (e) {
-      setAiSuggestions("Could not fetch AI suggestions.");
+      console.error("Error fetching AI suggestions:", e);
+      setAiSuggestions(
+        "Could not fetch AI suggestions. Please check your network connection and try again."
+      );
     }
     setLoadingSuggestions(false);
+  }
+
+  function confirmDeleteCourse(id: string, courseName: string) {
+    const message = `Are you sure you want to delete "${courseName}"? This will also delete all assignments and study sessions for this course. This action cannot be undone.`;
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) {
+        removeCourse(id);
+      }
+    } else {
+      Alert.alert(
+        "Delete Course",
+        `Are you sure you want to delete "${courseName}"? This will also delete all assignments and study sessions for this course. This action cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => removeCourse(id),
+          },
+        ]
+      );
+    }
   }
 
   function openStudyModal(courseId: string) {
@@ -263,9 +286,11 @@ export default function AssignmentsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Header with tabs */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Student Dashboard</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.headerTitle}>Student Dashboard</Text>
+            <ProfileBar />
+          </View>
           <View style={styles.tabBar}>
             <TouchableOpacity
               style={[
@@ -550,7 +575,9 @@ export default function AssignmentsScreen() {
                         )}
                       </Text>
                     </View>
-                    <TouchableOpacity onPress={() => removeCourse(item.id)}>
+                    <TouchableOpacity
+                      onPress={() => confirmDeleteCourse(item.id, item.name)}
+                    >
                       <Ionicons
                         name="trash-outline"
                         size={18}
@@ -1486,7 +1513,7 @@ export default function AssignmentsScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.courseAction, styles.deleteAction]}
-                    onPress={() => removeCourse(item.id)}
+                    onPress={() => confirmDeleteCourse(item.id, item.name)}
                   >
                     <Ionicons name="trash" size={16} color="#ff6b6b" />
                     <Text style={styles.deleteActionText}>Delete</Text>
@@ -1523,9 +1550,9 @@ export default function AssignmentsScreen() {
           </View>
 
           <View style={styles.lastGeneratedContainer}>
-            <View style={styles.lastGeneratedText}>
+            <Text style={styles.lastGeneratedText}>
               Last generated: {formatTimestamp(lastSuggestionTime)}
-            </View>
+            </Text>
             <TouchableOpacity
               style={styles.refreshButton}
               onPress={fetchAISuggestions}
@@ -1617,7 +1644,25 @@ export default function AssignmentsScreen() {
   }
 
   function formatDate(dateString: string): string {
-    const date = new Date(dateString.replace(/-/g, "/"));
+    if (!dateString) {
+      return "No Date";
+    }
+
+    let date: Date;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      const parts = dateString.split("-");
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      date = new Date(year, month, day);
+    } else {
+      date = new Date(dateString);
+    }
+
+    if (isNaN(date.getTime())) {
+      return "Invalid Date";
+    }
     return date.toDateString();
   }
 
@@ -1708,7 +1753,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "700",
     color: "#111827",
-    marginBottom: 12,
   },
   tabBar: {
     flexDirection: "row",
@@ -2163,8 +2207,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   courseStats: {
-    flexDirection: "row",
-    gap: 12,
+    flexDirection: "column",
+    gap: 6,
   },
   courseStat: {
     flexDirection: "row",
@@ -2715,5 +2759,11 @@ const styles = StyleSheet.create({
     color: "#3b82f6",
     fontSize: 12,
     fontWeight: "500",
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
   },
 });
