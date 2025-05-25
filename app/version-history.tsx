@@ -15,28 +15,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const testEnvironments = [
   {
     name: "Alpha",
-    url: "https://alpha.yan-dashboard.vercel.app",
+    url: "https://alpha.yandashboard.com",
     description: "Earliest testing phase with new experimental features",
     badgeColor: "#fef3c7",
-    textColor: "#92400e"
+    textColor: "#92400e",
   },
   {
     name: "Beta",
-    url: "https://beta.yan-dashboard.vercel.app",
-    description: "More stable with refined features ready for wider testing",
+    url: "https://beta.yandashboard.com",
+    description:
+      "(NOT AVAILABLE) More stable with refined features ready for wider testing",
     badgeColor: "#e0f2fe",
     textColor: "#0369a1",
   },
   {
     name: "RC (Release Candidate)",
-    url: "https://rc.yan-dashboard.vercel.app",
-    description: "Final testing phase before production release",
+    url: "https://rc.yandashboard.com",
+    description:
+      "(NOT AVAILABLE) Final testing phase before production release",
     badgeColor: "#d1fae5",
     textColor: "#065f46",
   },
   {
     name: "Production",
-    url: "https://yan-dashboard.vercel.app",
+    url: "https://yandashboard.com",
     description: "Stable production version",
     badgeColor: "#dcfce7",
     textColor: "#14532d",
@@ -44,6 +46,18 @@ const testEnvironments = [
 ];
 
 const versionHistory = [
+  {
+    version: "0.2.0-alpha.1",
+    date: "2025-05-25",
+    type: "alpha",
+    changes: ["Add prerelease warning for non-production environments"],
+  },
+  {
+    version: "0.1.1",
+    date: "2025-05-25",
+    type: "production",
+    changes: ["Hotfix", "Correct testing environment URLs"],
+  },
   {
     version: "0.1.0",
     date: "2025-05-25",
@@ -84,7 +98,7 @@ const versionHistory = [
 export default function VersionHistoryScreen() {
   const router = useRouter();
   const currentVersion = APP_VERSION;
-  
+
   const handleOpenUrl = (url: string) => {
     Linking.openURL(url);
   };
@@ -122,27 +136,37 @@ export default function VersionHistoryScreen() {
           <Text style={styles.sectionTitle}>Testing Environments</Text>
         </View>
         <Text style={styles.sectionDescription}>
-          Access different build branches of Yan Dashboard through these dedicated URLs:
+          Access different build branches of Yan Dashboard through these
+          dedicated URLs:
         </Text>
 
         <View style={styles.environmentsContainer}>
           {testEnvironments.map((env, index) => (
-            <TouchableOpacity 
-              key={env.name} 
+            <TouchableOpacity
+              key={env.name}
               style={styles.environmentCard}
               onPress={() => handleOpenUrl(env.url)}
             >
-              <View style={[
-                styles.environmentBadge, 
-                { backgroundColor: env.badgeColor }
-              ]}>
-                <Text style={[styles.environmentBadgeText, { color: env.textColor }]}>
+              <View
+                style={[
+                  styles.environmentBadge,
+                  { backgroundColor: env.badgeColor },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.environmentBadgeText,
+                    { color: env.textColor },
+                  ]}
+                >
                   {env.name}
                 </Text>
               </View>
               <View style={styles.environmentInfo}>
                 <Text style={styles.environmentUrl}>{env.url}</Text>
-                <Text style={styles.environmentDescription}>{env.description}</Text>
+                <Text style={styles.environmentDescription}>
+                  {env.description}
+                </Text>
               </View>
               <Ionicons name="open-outline" size={18} color="#64748b" />
             </TouchableOpacity>
@@ -171,7 +195,10 @@ export default function VersionHistoryScreen() {
                 <View
                   style={[
                     styles.versionBadge,
-                    version.type === "initial" && styles.initialBadge,
+                    (version.type === "initial" ||
+                      version.type === "production") &&
+                      styles.initialBadge,
+                    version.type === "rc" && styles.rcBadge,
                     version.type === "beta" && styles.betaBadge,
                     version.type === "alpha" && styles.alphaBadge,
                   ]}
@@ -198,7 +225,8 @@ export default function VersionHistoryScreen() {
           <Ionicons name="information-circle" size={20} color="#64748b" />
           <Text style={styles.developmentNoteText}>
             This page is intended for developers and power users to track the
-            evolution of Yan Dashboard and access different testing environments.
+            evolution of Yan Dashboard and access different testing
+            environments.
           </Text>
         </View>
       </ScrollView>
@@ -357,6 +385,9 @@ const styles = StyleSheet.create({
   },
   alphaBadge: {
     backgroundColor: "#fef3c7",
+  },
+  rcBadge: {
+    backgroundColor: "#d1fae5",
   },
   versionBadgeText: {
     fontSize: 11,
