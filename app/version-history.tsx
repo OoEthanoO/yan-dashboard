@@ -63,7 +63,7 @@ const versionHistory = [
     date: "2025-05-25",
     type: "initial",
     changes: [
-      "Initial release of Yan Dashboard",
+      "Initial release of YanDashboard",
       "Student assignment tracking",
       "Course management",
       "Study session logging",
