@@ -11,6 +11,7 @@ import {
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { Assignment } from "../context/AssignmentsContext";
 import { Course } from "../context/CoursesContext";
+import { formatDateToYYYYMMDD } from "./DatePicker";
 
 type DataPoint = {
   date: Date;
@@ -40,6 +41,12 @@ const GradeChart: React.FC<GradeChartProps> = ({
 
   const displayedPoint = isWeb ? hoveredPoint || selectedPoint : selectedPoint;
 
+  const parseLocalDate = (dateString: string, offset: number): Date => {
+    const parts = dateString.split("-").map(Number);
+    console.log("Parsed date parts:", parts);
+    return new Date(parts[0], parts[1] - 1, parts[2] + offset);
+  };
+
   if (!course.gradeHistory?.length && !assignments.length) {
     return (
       <View style={styles.emptyContainer}>
@@ -50,14 +57,14 @@ const GradeChart: React.FC<GradeChartProps> = ({
 
   const dataPoints: DataPoint[] = [
     ...(course.gradeHistory || []).map((point) => ({
-      date: new Date(point.date),
+      date: parseLocalDate(normalizeDateStringToYYYYMMDD(point.date), 0),
       grade: point.grade,
       type: "course" as const,
     })),
     ...assignments
       .filter((a) => a.courseId === course.id && a.grade !== undefined)
       .map((a) => ({
-        date: new Date(a.dueDate),
+        date: parseLocalDate(normalizeDateStringToYYYYMMDD(a.dueDate), 1),
         grade: a.grade || 0,
         type: "assignment" as const,
         label: a.title,
@@ -348,6 +355,12 @@ const GradeChart: React.FC<GradeChartProps> = ({
     </View>
   );
 };
+
+export function normalizeDateStringToYYYYMMDD(dateString: string): string {
+  const dateObject = new Date(dateString);
+
+  return formatDateToYYYYMMDD(dateObject);
+}
 
 function generateDateTicks(minDate: Date, maxDate: Date): Date[] {
   const dateRange = maxDate.getTime() - minDate.getTime();

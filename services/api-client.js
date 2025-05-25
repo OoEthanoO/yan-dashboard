@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EncryptionService } from "./encryption-service";
 
 const DEBUG_MODE_KEY = "debug_mode";
-const PROD_API_URL = "https://yan-dashboard.onrender.com/api"; // Replace with your production URL
+const PROD_API_URL = "https://yan-dashboard.onrender.com/api";
 const DEV_API_URL = "http://localhost:4000/api";
 const AUTH_TOKEN_KEY = "auth_token";
 const LAST_SYNC_KEY = "last_sync_time";
@@ -15,6 +15,31 @@ export class ApiClient {
 
   static async setDebugMode(enabled) {
     await AsyncStorage.setItem(DEBUG_MODE_KEY, enabled ? "true" : "false");
+  }
+
+  static async getIssuesData() {
+    try {
+      const baseUrl = await this.getApiUrl();
+      const token = await this.getToken();
+
+      const response = await fetch(`${baseUrl}/issues`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to fetch issues data");
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching issues data:", error);
+      return null;
+    }
   }
 
   static async getApiUrl() {

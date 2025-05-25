@@ -1748,6 +1748,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
+    ...(Platform.OS === "web" && { zIndex: 1000 }),
   },
   headerTitle: {
     fontSize: 22,
@@ -1760,6 +1761,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f1f5f9",
     borderRadius: 10,
     padding: 4,
+    ...(Platform.OS === "web" && { zIndex: 0 }),
   },
   tab: {
     flex: 1,
@@ -2765,5 +2767,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
+    ...(Platform.OS === "web" && { zIndex: 1 }),
   },
 });

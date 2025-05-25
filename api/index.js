@@ -110,6 +110,42 @@ const StudySessionSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const IssueSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  description: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ["open", "in-progress", "resolved"],
+    default: "open",
+    required: true,
+  },
+  priority: {
+    type: String,
+    enum: ["low", "medium", "high"],
+    default: "medium",
+    required: true,
+  },
+  type: {
+    type: String,
+    enum: ["bug", "feature", "improvement"],
+    required: true,
+  },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+IssueSchema.pre("save", function (next) {
+  this.updatedAt = new Date();
+  next();
+});
+
+IssueSchema.pre("findOneAndUpdate", function (next) {
+  this.set({ updatedAt: new Date() });
+  next();
+});
+
+const Issue = mongoose.model("Issue", IssueSchema);
+
 const User = mongoose.model("User", UserSchema);
 const Assignment = mongoose.model("Assignment", AssignmentSchema);
 const Course = mongoose.model("Course", CourseSchema);
@@ -506,9 +542,11 @@ IMPORTANT INSTRUCTIONS:
 - Format as bullet points with • symbol
 - Analyze subject/course patterns across assignments to identify subject-specific trends
 - PRIORITIZE courses with the LOWEST GRADES - give them more detailed attention
-- At least 3 suggestions must specifically address the lowest-graded subjects
 - Every suggestion must directly reference specific course names or assignment titles shown in the data
 - Be specific and actionable - not generic
+- Suggest targeted time allocation based on study patterns
+- Identify subject-specific weaknesses based on grade patterns
+- Do not make assumptions about the content of the courses or assignments unless descriptions are provided
 
 KEY DATA INSIGHTS:
 ${
@@ -577,30 +615,38 @@ ${courses
 BASED ON THE ABOVE REAL DATA, provide 5 specific, personalized productivity suggestions that reference actual course names and assignments.
 `;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-0613",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a highly personalized academic productivity assistant analyzing real student data. Your primary focus is improving performance in LOWER-GRADED SUBJECTS.\n\n" +
-            "CRITICAL PRIORITIES:\n" +
-            "- Dedicate at least 3/5 suggestions to the lowest-graded courses\n" +
-            "- Always reference specific course names and assignment titles\n" +
-            "- Each suggestion must be under 15 words, formatted with • symbol\n" +
-            "- Analyze study patterns and suggest targeted time allocation\n" +
-            "- Identify subject-specific weaknesses based on grade patterns\n" +
-            "- Never claim data is missing; work with what's provided\n" +
-            "- Be ultra-specific and actionable - avoid generic advice\n\n" +
-            "Your suggestions should address the student's actual course performance, prioritizing improvement where grades are lowest.",
-        },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 200,
-      temperature: 0.7,
-    });
+    console.log("AI suggestions prompt:", prompt);
 
-    const suggestions = completion.choices[0].message.content;
+    // const completion = await openai.chat.completions.create({
+    //   // model: "gpt-4-0613",
+    //   model: "o3-2025-04-16",
+    //   messages: [
+    //     {
+    //       role: "system",
+    //       content:
+    //         "You are a highly personalized academic productivity assistant analyzing real student data. Your primary focus is improving performance in LOWER-GRADED SUBJECTS.\n\n" +
+    //         "CRITICAL PRIORITIES:\n" +
+    //         // "- Dedicate at least 3/5 suggestions to the lowest-graded courses\n" +
+    //         "- Always reference specific course names and assignment titles\n" +
+    //         "- Each suggestion must be under 15 words, formatted with • symbol\n" +
+    //         "- Analyze study patterns and suggest targeted time allocation\n" +
+    //         "- Identify subject-specific weaknesses based on grade patterns\n" +
+    //         "- Never claim data is missing; work with what's provided\n" +
+    //         "- Be ultra-specific and actionable - avoid generic advice\n\n" +
+    //         "Your suggestions should address the student's actual course performance, prioritizing improvement where grades are lowest.",
+    //     },
+    //     { role: "user", content: prompt },
+    //   ],
+    //   // max_tokens: 200,
+    //   // max_completion_tokens: 200,
+    //   // temperature: 0.7,
+    // });
+
+    // console.log("AI suggestions response:", completion);
+
+    // const suggestions = completion.choices[0].message.content;
+    const suggestions =
+      "This would be a paid feature that will be available soon.";
     res.json({ suggestions });
   } catch (err) {
     console.error("AI suggestions error:", err);
@@ -853,6 +899,42 @@ app.get("/api/auth/encryption-key", authenticate, async (req, res) => {
   } catch (err) {
     console.error("Encryption key retrieval error:", err);
     res.status(500).json({ error: "Failed to retrieve encryption key" });
+  }
+});
+
+app.get("/api/issues", authenticate, async (req, res) => {
+  try {
+    const allDbIssues = await Issue.find({}).sort({ createdAt: -1 });
+
+    const issues = allDbIssues
+      .filter((item) => item.type === "bug")
+      .map((item) => ({
+        id: item._id.toString(),
+        title: item.title,
+        description: item.description,
+        status: item.status,
+        priority: item.priority,
+        type: item.type,
+      }));
+
+    const features = allDbIssues
+      .filter((item) => item.type === "feature" || item.type === "improvement")
+      .map((item) => ({
+        id: item._id.toString(),
+        title: item.title,
+        description: item.description,
+        status: item.status,
+        priority: item.priority,
+        type: item.type,
+      }));
+
+    res.json({
+      issues,
+      features,
+    });
+  } catch (err) {
+    console.error("Issues fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch issues data" });
   }
 });
 

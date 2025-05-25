@@ -1,8 +1,11 @@
+import { APP_FULL_VERSION } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Platform,
   StyleSheet,
   Text,
@@ -10,34 +13,88 @@ import {
   View,
 } from "react-native";
 import { ApiClient } from "../services/api-client";
+import { SyncService } from "../services/sync-service";
 
 export default function ProfileBar() {
   const { user, logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const router = useRouter();
   const [isDebugMode, setIsDebugMode] = useState(false);
 
   if (!user) return null;
 
   const checkDebugMode = useCallback(async () => {
-    const isDebug = await ApiClient.isDebugMode();
-    setIsDebugMode(isDebug);
+    try {
+      const isDebug = await ApiClient.isDebugMode();
+      setIsDebugMode(isDebug);
+    } catch (error) {
+      console.error("Failed to check debug mode:", error);
+    }
   }, []);
 
   useEffect(() => {
-    checkDebugMode();
+    const timer = setTimeout(() => {
+      checkDebugMode();
+    }, 500);
 
-    const interval = setInterval(checkDebugMode, 1000);
-    return () => clearInterval(interval);
+    const interval = setInterval(checkDebugMode, 5000);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [checkDebugMode]);
 
   useEffect(() => {
-    const checkDebugMode = async () => {
-      const isDebug = await ApiClient.isDebugMode();
-      setIsDebugMode(isDebug);
+    setIsSyncing(true);
+
+    const originalRequest = ApiClient.request;
+    let activeRequests = 0;
+
+    ApiClient.request = async (endpoint, method, data) => {
+      try {
+        if (user) {
+          setIsSyncing(true);
+          activeRequests++;
+        }
+
+        const result = await originalRequest.call(
+          ApiClient,
+          endpoint,
+          method,
+          data
+        );
+        return result;
+      } catch (error) {
+        console.error(`API request failed for ${endpoint}:`, error);
+        throw error;
+      } finally {
+        if (user) {
+          activeRequests--;
+          if (activeRequests === 0) {
+            setIsSyncing(false);
+          }
+        }
+      }
     };
-    checkDebugMode();
-  }, []);
+
+    const unsubscribe = SyncService.subscribeToDataChanges(() => {
+      setIsSyncing(false);
+    });
+
+    const timer = setTimeout(() => {
+      if (activeRequests === 0) {
+        setIsSyncing(false);
+      }
+    }, 2000);
+
+    return () => {
+      ApiClient.request = originalRequest;
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [user]);
 
   const getInitials = () => {
     if (!user?.name) return "?";
@@ -50,25 +107,34 @@ export default function ProfileBar() {
 
   return (
     <View style={styles.container}>
-      {isDebugMode && (
-        <Text style={{ color: "#ef4444", fontSize: 12 }}>DEBUG</Text>
-      )}
-      <TouchableOpacity
-        style={styles.profileButton}
-        onPress={() => setMenuVisible(!menuVisible)}
-      >
-        <View style={styles.avatar}>
-          <Text style={styles.initials}>{getInitials()}</Text>
-        </View>
-        <Text style={styles.username} numberOfLines={1}>
-          {user.name}
-        </Text>
-        <Ionicons
-          name={menuVisible ? "chevron-up" : "chevron-down"}
-          size={16}
-          color="#64748b"
-        />
-      </TouchableOpacity>
+      <View style={styles.statusContainer}>
+        {isDebugMode && <Text style={styles.debugText}>DEBUG</Text>}
+      </View>
+      <View style={styles.profileSection}>
+        {isSyncing && (
+          <ActivityIndicator
+            size="small"
+            color="#3b82f6"
+            style={styles.syncIndicator}
+          />
+        )}
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => setMenuVisible(!menuVisible)}
+        >
+          <View style={styles.avatar}>
+            <Text style={styles.initials}>{getInitials()}</Text>
+          </View>
+          <Text style={styles.username} numberOfLines={1}>
+            {user.name}
+          </Text>
+          <Ionicons
+            name={menuVisible ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="#64748b"
+          />
+        </TouchableOpacity>
+      </View>
 
       {menuVisible && (
         <View style={styles.menu}>
@@ -87,6 +153,21 @@ export default function ProfileBar() {
             style={styles.menuItem}
             onPress={() => {
               setMenuVisible(false);
+              router.push("/issues");
+            }}
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={18}
+              color="#64748b"
+            />
+            <Text style={styles.menuItemText}>Known Issues</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuVisible(false);
               router.push("/privacy");
             }}
           >
@@ -94,7 +175,39 @@ export default function ProfileBar() {
             <Text style={styles.menuItemText}>Privacy</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuVisible(false);
+              router.push("/version-history");
+            }}
+          >
+            <Ionicons name="git-branch" size={18} color="#64748b" />
+            <Text style={styles.menuItemText}>Version History</Text>
+          </TouchableOpacity>
+
+          {/* Add Ko-fi donation option */}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => {
+              setMenuVisible(false);
+              const kofiUrl = "https://ko-fi.com/ethanyanxu";
+              if (Platform.OS === "web") {
+                window.open(kofiUrl, "_blank");
+              } else {
+                WebBrowser.openBrowserAsync(kofiUrl);
+              }
+            }}
+          >
+            <Ionicons name="cafe" size={18} color="#29abe0" />
+            <Text style={styles.menuItemText}>Support Development</Text>
+          </TouchableOpacity>
+
           <View style={styles.menuDivider} />
+
+          <View style={styles.menuVersionContainer}>
+            <Text style={styles.versionText}>{APP_FULL_VERSION}</Text>
+          </View>
 
           <TouchableOpacity
             style={[styles.menuItem, styles.logoutItem]}
@@ -115,6 +228,7 @@ export default function ProfileBar() {
 const styles = StyleSheet.create({
   container: {
     position: "relative",
+    ...(Platform.OS === "web" && { zIndex: 1 }),
   },
   profileButton: {
     flexDirection: "row",
@@ -157,7 +271,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
-    zIndex: 100,
+    zIndex: 200,
     ...Platform.select({
       web: {
         boxShadow:
@@ -188,5 +302,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#ef4444",
     fontWeight: "500",
+  },
+  statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+    justifyContent: "flex-end",
+  },
+  syncIndicator: {
+    marginRight: 8,
+  },
+  debugText: {
+    color: "#ef4444",
+    fontSize: 12,
+  },
+  profileSection: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  menuVersionContainer: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  versionText: {
+    fontSize: 12,
+    color: "#94a3b8",
   },
 });

@@ -10,7 +10,7 @@ interface DatePickerProps {
   style?: any;
 }
 
-function formatDateToYYYYMMDD(date: Date): string {
+export function formatDateToYYYYMMDD(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
     2,
     "0"

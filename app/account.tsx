@@ -1,8 +1,10 @@
 import DisclaimerModal from "@/components/DisclaimerModal";
+import { APP_FULL_VERSION } from "@/constants";
 import { useAuth } from "@/context/AuthContext";
 import { ApiClient } from "@/services/api-client";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -34,8 +36,10 @@ export default function AccountScreen() {
 
   useEffect(() => {
     const loadDebugMode = async () => {
-      const isDebug = await ApiClient.isDebugMode();
-      setDebugMode(isDebug);
+      if (__DEV__) {
+        const isDebug = await ApiClient.isDebugMode();
+        setDebugMode(isDebug);
+      }
     };
     loadDebugMode();
   }, []);
@@ -44,6 +48,15 @@ export default function AccountScreen() {
     router.replace("/");
     return null;
   }
+
+  const openKofi = async () => {
+    const kofiUrl = "https://ko-fi.com/ethanyanxu";
+    if (Platform.OS === "web") {
+      window.open(kofiUrl, "_blank");
+    } else {
+      await WebBrowser.openBrowserAsync(kofiUrl);
+    }
+  };
 
   const toggleDebugMode = async () => {
     const newMode = !debugMode;
@@ -285,32 +298,53 @@ export default function AccountScreen() {
               <Ionicons name="chevron-forward" size={20} color="#64748b" />
             </TouchableOpacity>
           </View>
+          {__DEV__ && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Developer Options</Text>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Developer Options</Text>
-
-            <TouchableOpacity
-              style={styles.securityItem}
-              onPress={toggleDebugMode}
-            >
-              <View style={styles.securityItemContent}>
-                <Ionicons name="code-working" size={24} color="#3b82f6" />
-                <View>
-                  <Text style={styles.securityItemTitle}>Debug Mode</Text>
-                  <Text style={styles.securityItemDescription}>
-                    {debugMode
-                      ? "Using local server (localhost)"
-                      : "Using production server"}
-                  </Text>
+              <TouchableOpacity
+                style={styles.securityItem}
+                onPress={toggleDebugMode}
+              >
+                <View style={styles.securityItemContent}>
+                  <Ionicons name="code-working" size={24} color="#3b82f6" />
+                  <View>
+                    <Text style={styles.securityItemTitle}>Debug Mode</Text>
+                    <Text style={styles.securityItemDescription}>
+                      {debugMode
+                        ? "Using local server (localhost)"
+                        : "Using production server"}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <Switch
-                value={debugMode}
-                onValueChange={toggleDebugMode}
-                trackColor={{ false: "#cbd5e1", true: "#93c5fd" }}
-                thumbColor={debugMode ? "#3b82f6" : "#f4f4f5"}
-              />
-            </TouchableOpacity>
+                <Switch
+                  value={debugMode}
+                  onValueChange={toggleDebugMode}
+                  trackColor={{ false: "#cbd5e1", true: "#93c5fd" }}
+                  thumbColor={debugMode ? "#3b82f6" : "#f4f4f5"}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Support Development Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Support Development</Text>
+
+            <View style={styles.supportContainer}>
+              <Text style={styles.supportText}>
+                If you find this app useful, consider supporting its continued
+                development. Your contributions help keep the servers running
+                and new features coming!
+              </Text>
+
+              <TouchableOpacity style={styles.kofiButton} onPress={openKofi}>
+                <View style={styles.kofiContent}>
+                  <Ionicons name="cafe" size={22} color="#fff" />
+                  <Text style={styles.kofiButtonText}>Buy me a coffee</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Danger Zone */}
@@ -331,7 +365,7 @@ export default function AccountScreen() {
               <Text style={styles.signOutText}>Sign Out</Text>
             </TouchableOpacity>
 
-            <Text style={styles.versionText}>Yan Dashboard v1.0.0</Text>
+            <Text style={styles.versionText}>{APP_FULL_VERSION}</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -513,5 +547,33 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 12,
     color: "#94a3b8",
+  },
+  supportContainer: {
+    alignItems: "center",
+  },
+  supportText: {
+    fontSize: 14,
+    color: "#64748b",
+    textAlign: "center",
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  kofiButton: {
+    backgroundColor: "#29abe0",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  kofiContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  kofiButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 15,
   },
 });
