@@ -78,7 +78,7 @@ export default function LoginScreen() {
       >
         <View style={styles.header}>
           <Ionicons name="school" size={48} color="#3b82f6" />
-          <Text style={styles.appName}>Yan Dashboard</Text>
+          <Text style={styles.appName}>Alpha Dashboard</Text>
           <Text style={styles.subtitle}>Your academic companion</Text>
         </View>
 
