@@ -35,7 +35,7 @@ const testEnvironments = [
     name: "Beta",
     url: "https://beta.yandashboard.com",
     description:
-      "(NOT AVAILABLE) More stable with refined features ready for wider testing. By using this branch, you acknowledge that you may experience abnormalities that may profoundly affect your experience.",
+      "More stable with refined features ready for wider testing. By using this branch, you acknowledge that you may experience abnormalities that may profoundly affect your experience.",
     badgeColor: "#e0f2fe",
     textColor: "#0369a1",
   },
@@ -43,7 +43,7 @@ const testEnvironments = [
     name: "RC",
     url: "https://rc.yandashboard.com",
     description:
-      "(NOT AVAILABLE) Final testing phase before production release. By using this branch, you acknowledge that you may encounter many bugs and issues that may affect your experience.",
+      "Final testing phase before production release. By using this branch, you acknowledge that you may encounter many bugs and issues that may affect your experience.",
     badgeColor: "#d1fae5",
     textColor: "#065f46",
   },
