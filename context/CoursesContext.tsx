@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -7,6 +8,9 @@ import React, {
 } from "react";
 import { ApiClient } from "../services/api-client";
 import { EncryptionService } from "../services/encryption-service";
+import { SyncService } from "../services/sync-service";
+import { Assignment } from "./AssignmentsContext";
+import { StudySession } from "./StudySessionsContext";
 
 export type GradePoint = {
   date: string;
@@ -53,6 +57,24 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
   const fetchCourses = async () => {
     try {
       setLoading(true);
+
+      // First load local data immediately
+      const localData = await SyncService.getLocalData();
+      if (localData.courses && localData.courses.length > 0) {
+        const coursesWithNumericGrades = localData.courses.map((c: Course) => ({
+          ...c,
+          grade: c.grade !== undefined ? Number(c.grade) : undefined,
+          isGradeEncrypted: false,
+          gradeHistory: c.gradeHistory?.map((point) => ({
+            ...point,
+            grade: Number(point.grade),
+            isEncrypted: false,
+          })),
+        }));
+        setCourses(coursesWithNumericGrades);
+      }
+
+      // Then sync with server in background
       const data = await ApiClient.getAllData();
       if (data?.courses) {
         const coursesWithNumericGrades = data.courses.map((c: Course) => ({
@@ -65,6 +87,11 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
             isEncrypted: false,
           })),
         }));
+
+        // Update local storage
+        await AsyncStorage.setItem("courses", JSON.stringify(data.courses));
+
+        // Update state
         setCourses(coursesWithNumericGrades);
       }
     } catch (error) {
@@ -76,6 +103,32 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchCourses();
+
+    // Subscribe to data changes from SyncService
+    const unsubscribe = SyncService.subscribeToDataChanges(async () => {
+      try {
+        const localData = await SyncService.getLocalData();
+        if (localData.courses) {
+          const coursesWithNumericGrades = localData.courses.map(
+            (c: Course) => ({
+              ...c,
+              grade: c.grade !== undefined ? Number(c.grade) : undefined,
+              isGradeEncrypted: false,
+              gradeHistory: c.gradeHistory?.map((point) => ({
+                ...point,
+                grade: Number(point.grade),
+                isEncrypted: false,
+              })),
+            })
+          );
+          setCourses(coursesWithNumericGrades);
+        }
+      } catch (error) {
+        console.error("Error updating courses after sync:", error);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const refreshCourses = async () => {
@@ -86,8 +139,8 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
+      // Process data for encryption
       let dataToSend = { ...course };
-
       if (dataToSend.grade !== undefined) {
         dataToSend.grade = await EncryptionService.encryptGradeData(
           dataToSend.grade
@@ -105,8 +158,23 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         );
       }
 
+      // Create temp ID for local storage
+      const tempId = `temp_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+      const newCourse = {
+        ...course, // Use unencrypted version for local storage
+        id: tempId,
+      };
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedCourses = [...localData.courses, newCourse];
+      await SyncService.updateAndSync(undefined, updatedCourses);
+
+      // Sync with server in background
       await ApiClient.createCourse(dataToSend);
-      await fetchCourses();
+      await fetchCourses(); // This will replace temp IDs with server IDs
     } catch (error) {
       console.error("Failed to add course:", error);
     } finally {
@@ -117,8 +185,32 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
   const removeCourse = async (id: string) => {
     try {
       setLoading(true);
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+
+      // Remove course from local storage
+      const updatedCourses = localData.courses.filter(
+        (c: Course) => c.id !== id
+      );
+
+      // Also remove related assignments and study sessions
+      const updatedAssignments = localData.assignments.filter(
+        (a: Assignment) => a.courseId !== id
+      );
+      const updatedSessions = localData.studySessions.filter(
+        (s: StudySession) => s.courseId !== id
+      );
+
+      // Update all local data
+      await SyncService.updateAndSync(
+        updatedAssignments,
+        updatedCourses,
+        updatedSessions
+      );
+
+      // Sync with server in background (server will cascade delete)
       await ApiClient.deleteCourse(id);
-      await fetchCourses();
     } catch (error) {
       console.error("Failed to remove course:", error);
     } finally {
@@ -131,10 +223,53 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     grade: string | number | undefined
   ) => {
     try {
-      console.log("Setting course grade:", id, grade);
-
       setLoading(true);
 
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const course = courses.find((c) => c.id === id);
+
+      if (!course) {
+        throw new Error("Course not found");
+      }
+
+      // Process for local storage (unencrypted)
+      const numericGrade =
+        grade === undefined
+          ? undefined
+          : typeof grade === "string"
+          ? Number(grade)
+          : grade;
+
+      const updatedCourses = localData.courses.map((c: Course) => {
+        if (c.id === id) {
+          const updatedCourse = {
+            ...c,
+            grade: numericGrade,
+          };
+
+          // Add to grade history if provided
+          if (numericGrade !== undefined) {
+            const newGradePoint = {
+              date: new Date().toISOString(),
+              grade: numericGrade,
+            };
+
+            updatedCourse.gradeHistory = [
+              ...(c.gradeHistory || []),
+              newGradePoint,
+            ];
+          }
+
+          return updatedCourse;
+        }
+        return c;
+      });
+
+      // Update local data
+      await SyncService.updateAndSync(undefined, updatedCourses);
+
+      // Process for server (encrypted)
       if (
         grade === undefined ||
         (typeof grade === "string" && grade.trim() === "")
@@ -144,48 +279,40 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
           isGradeEncrypted: false,
         });
       } else {
-        const numericGrade = typeof grade === "string" ? Number(grade) : grade;
+        const numericGradeForServer =
+          typeof grade === "string" ? Number(grade) : grade;
+        const encryptedGrade = await EncryptionService.encryptGradeData(
+          numericGradeForServer
+        );
 
-        const course = courses.find((c) => c.id === id);
-        if (course) {
-          const encryptedGrade = await EncryptionService.encryptGradeData(
-            numericGrade
-          );
+        const newGradePoint = {
+          date: new Date().toISOString(),
+          grade: await EncryptionService.encryptGradeData(
+            numericGradeForServer as number
+          ),
+          isEncrypted: true,
+        };
 
-          const newGradePoint = {
-            date: new Date().toISOString(),
-            grade: await EncryptionService.encryptGradeData(
-              numericGrade as number
-            ),
+        const encryptedHistory = await Promise.all(
+          course.gradeHistory?.map(async (point) => ({
+            date: point.date,
+            grade: await EncryptionService.encryptGradeData(point.grade),
             isEncrypted: true,
-          };
+          })) || []
+        );
 
-          console.log("New grade point:", newGradePoint);
+        const updatedGradeHistory = [
+          ...(encryptedHistory || []),
+          newGradePoint,
+        ];
 
-          const encryptedHistory = await Promise.all(
-            course.gradeHistory?.map(async (point) => ({
-              date: point.date,
-              grade: await EncryptionService.encryptGradeData(point.grade),
-              isEncrypted: true,
-            })) || []
-          );
-
-          const updatedGradeHistory = [
-            ...(encryptedHistory || []),
-            newGradePoint,
-          ];
-
-          console.log("Updated grade history:", updatedGradeHistory);
-
-          await ApiClient.updateCourse(id, {
-            grade: encryptedGrade,
-            isGradeEncrypted: true,
-            gradeHistory: updatedGradeHistory,
-          });
-        }
+        // Sync with server in background
+        await ApiClient.updateCourse(id, {
+          grade: encryptedGrade,
+          isGradeEncrypted: true,
+          gradeHistory: updatedGradeHistory,
+        });
       }
-
-      await fetchCourses();
     } catch (error) {
       console.error("Failed to update course grade:", error);
     } finally {
@@ -198,9 +325,34 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     gradeHistory: GradePoint[]
   ) => {
     try {
-      console.log("Updating course grade history:", id, gradeHistory);
       setLoading(true);
 
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedCourses = localData.courses.map((c: Course) => {
+        if (c.id === id) {
+          // Calculate current grade based on latest history point
+          let currentGrade = c.grade;
+          if (gradeHistory.length > 0) {
+            const latestPoint = [...gradeHistory].sort(
+              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+            )[0];
+            currentGrade = latestPoint.grade;
+          }
+
+          return {
+            ...c,
+            grade: currentGrade,
+            gradeHistory,
+          };
+        }
+        return c;
+      });
+
+      // Update local storage
+      await SyncService.updateAndSync(undefined, updatedCourses);
+
+      // Process for server (encrypted)
       const encryptedHistory = await Promise.all(
         gradeHistory.map(async (point) => ({
           date: point.date,
@@ -209,13 +361,11 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         }))
       );
 
-      console.log("Encrypted grade history:", encryptedHistory);
-
       let encryptedCurrentGrade;
       let encryptedGradeFlag = false;
 
       if (gradeHistory.length > 0) {
-        const latestPoint = gradeHistory.sort(
+        const latestPoint = [...gradeHistory].sort(
           (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         )[0];
         encryptedCurrentGrade = await EncryptionService.encryptGradeData(
@@ -224,13 +374,12 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         encryptedGradeFlag = true;
       }
 
+      // Sync with server in background
       await ApiClient.updateCourse(id, {
         gradeHistory: encryptedHistory,
         grade: encryptedCurrentGrade,
         isGradeEncrypted: encryptedGradeFlag,
       });
-
-      await fetchCourses();
     } catch (error) {
       console.error("Failed to update course grade history:", error);
     } finally {

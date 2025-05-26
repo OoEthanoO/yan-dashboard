@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -7,6 +8,7 @@ import React, {
 } from "react";
 import { ApiClient } from "../services/api-client";
 import { EncryptionService } from "../services/encryption-service";
+import { SyncService } from "../services/sync-service";
 
 export type Assignment = {
   id: string;
@@ -54,6 +56,21 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const fetchAssignments = async () => {
     try {
       setLoading(true);
+
+      // First, load local data immediately
+      const localData = await SyncService.getLocalData();
+      if (localData.assignments && localData.assignments.length > 0) {
+        const assignmentsWithNumericGrades = localData.assignments.map(
+          (a: Assignment) => ({
+            ...a,
+            grade: a.grade !== undefined ? Number(a.grade) : undefined,
+            isGradeEncrypted: false,
+          })
+        );
+        setAssignments(assignmentsWithNumericGrades);
+      }
+
+      // Then sync with server in background
       const data = await ApiClient.getAllData();
       if (data?.assignments) {
         const assignmentsWithNumericGrades = data.assignments.map(
@@ -63,6 +80,14 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             isGradeEncrypted: false,
           })
         );
+
+        // Update local storage with server data
+        await AsyncStorage.setItem(
+          "assignments",
+          JSON.stringify(data.assignments)
+        );
+
+        // Update state with server data
         setAssignments(assignmentsWithNumericGrades);
       }
     } catch (error) {
@@ -74,6 +99,27 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchAssignments();
+
+    // Subscribe to data changes from SyncService
+    const unsubscribe = SyncService.subscribeToDataChanges(async () => {
+      try {
+        const localData = await SyncService.getLocalData();
+        if (localData.assignments) {
+          const assignmentsWithNumericGrades = localData.assignments.map(
+            (a: Assignment) => ({
+              ...a,
+              grade: a.grade !== undefined ? Number(a.grade) : undefined,
+              isGradeEncrypted: false,
+            })
+          );
+          setAssignments(assignmentsWithNumericGrades);
+        }
+      } catch (error) {
+        console.error("Error updating assignments after sync:", error);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const refreshAssignments = async () => {
@@ -83,21 +129,39 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const addAssignment = async (assignment: Omit<Assignment, "id">) => {
     try {
       setLoading(true);
+
+      // Process grade encryption if needed
+      let processedAssignment = { ...assignment };
       if (assignment.grade !== undefined) {
         const encryptedGrade =
           typeof assignment.grade === "string"
             ? await EncryptionService.encryptGradeData(Number(assignment.grade))
             : await EncryptionService.encryptGradeData(assignment.grade);
 
-        assignment = {
+        processedAssignment = {
           ...assignment,
           grade: encryptedGrade,
           isGradeEncrypted: true,
         };
       }
 
-      await ApiClient.createAssignment(assignment);
-      await fetchAssignments();
+      // Create temp ID for local storage
+      const tempId = `temp_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+      const newAssignment = {
+        ...processedAssignment,
+        id: tempId,
+      };
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedAssignments = [...localData.assignments, newAssignment];
+      await SyncService.updateAndSync(updatedAssignments);
+
+      // Sync with server in background
+      await ApiClient.createAssignment(processedAssignment);
+      await fetchAssignments(); // This will replace temp IDs with server IDs
     } catch (error) {
       console.error("Failed to add assignment:", error);
     } finally {
@@ -108,8 +172,17 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const removeAssignment = async (id: string) => {
     try {
       setLoading(true);
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedAssignments = localData.assignments.filter(
+        (a: Assignment) => a.id !== id
+      );
+      await SyncService.updateAndSync(updatedAssignments);
+
+      // Sync with server in background
       await ApiClient.deleteAssignment(id);
-      await fetchAssignments();
+      // No need to call fetchAssignments as the local change is already reflected
     } catch (error) {
       console.error("Failed to delete assignment:", error);
     } finally {
@@ -130,7 +203,26 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
           ? Number(grade)
           : grade;
 
-      const dueDate = assignments.find((a) => a.id === id)?.dueDate;
+      const assignment = assignments.find((a) => a.id === id);
+      if (!assignment) {
+        throw new Error("Assignment not found");
+      }
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedAssignments = localData.assignments.map((a: Assignment) => {
+        if (a.id === id) {
+          return {
+            ...a,
+            grade: numericGrade,
+          };
+        }
+        return a;
+      });
+      await SyncService.updateAndSync(updatedAssignments);
+
+      // Sync with server in background
+      const dueDate = assignment?.dueDate;
       if (dueDate) {
         const now = new Date();
         if (new Date(dueDate) <= now) {
@@ -147,8 +239,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
           console.warn("Cannot grade future assignments");
         }
       }
-
-      await fetchAssignments();
     } catch (error) {
       console.error("Failed to update assignment grade:", error);
     } finally {
@@ -156,16 +246,36 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Implement similar changes for other methods (toggleAssignmentCompleted, updateAssignment)...
   const toggleAssignmentCompleted = async (id: string) => {
     try {
       setLoading(true);
-      const assignment = assignments.find((a) => a.id === id);
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const assignment = localData.assignments.find(
+        (a: Assignment) => a.id === id
+      );
       if (assignment) {
+        const updatedAssignments = localData.assignments.map(
+          (a: Assignment) => {
+            if (a.id === id) {
+              return {
+                ...a,
+                completed: !a.completed,
+              };
+            }
+            return a;
+          }
+        );
+
+        await SyncService.updateAndSync(updatedAssignments);
+
+        // Sync with server in background
         await ApiClient.updateAssignment(id, {
           completed: !assignment.completed,
         });
       }
-      await fetchAssignments();
     } catch (error) {
       console.error("Failed to toggle assignment completion:", error);
     } finally {
@@ -180,6 +290,8 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
+      // Process grade encryption if needed
+      let processedUpdate = { ...updatedData };
       if (updatedData.grade !== undefined) {
         let numericGrade: number | undefined;
 
@@ -194,15 +306,29 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             ? await EncryptionService.encryptGradeData(numericGrade)
             : undefined;
 
-        updatedData = {
+        processedUpdate = {
           ...updatedData,
           grade: encryptedGrade,
           isGradeEncrypted: encryptedGrade !== undefined,
         };
       }
 
-      await ApiClient.updateAssignment(id, updatedData);
-      await fetchAssignments();
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedAssignments = localData.assignments.map((a: Assignment) => {
+        if (a.id === id) {
+          return {
+            ...a,
+            ...updatedData, // Use unencrypted version for local storage
+          };
+        }
+        return a;
+      });
+
+      await SyncService.updateAndSync(updatedAssignments);
+
+      // Sync with server in background
+      await ApiClient.updateAssignment(id, processedUpdate);
     } catch (error) {
       console.error("Failed to update assignment:", error);
     } finally {

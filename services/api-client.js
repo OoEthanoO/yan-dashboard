@@ -155,10 +155,11 @@ export class ApiClient {
       lastSyncTime,
     });
 
+    // Clear deleted IDs after successful sync
     await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
-
     await this.setLastSyncTime(response.lastSync);
 
+    // Decrypt any data received from server
     if (response.data?.assignments?.length) {
       response.data.assignments = await EncryptionService.decryptAssignments(
         response.data.assignments
@@ -172,6 +173,30 @@ export class ApiClient {
     }
 
     return response.data;
+  }
+
+  static async markAssignmentForDeletion(id) {
+    try {
+      let deletedIds = [];
+      const deletedIdsStr = await AsyncStorage.getItem("deleted_assignments");
+
+      if (deletedIdsStr) {
+        deletedIds = JSON.parse(deletedIdsStr);
+      }
+
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+      }
+
+      await AsyncStorage.setItem(
+        "deleted_assignments",
+        JSON.stringify(deletedIds)
+      );
+      return true;
+    } catch (error) {
+      console.error("Error marking assignment for deletion:", error);
+      return false;
+    }
   }
 
   static async getAllData() {
@@ -190,6 +215,11 @@ export class ApiClient {
     }
 
     return response;
+  }
+
+  static async getVersionHistory() {
+    const response = await this.request("/version-history");
+    return response.versionHistory;
   }
 
   static async getAiSuggestions(assignments, courses, studySessions) {

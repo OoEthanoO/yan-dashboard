@@ -101,6 +101,7 @@ export default function LoginScreen() {
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
+              placeholderTextColor="#aaa"
             />
           )}
 
@@ -111,6 +112,7 @@ export default function LoginScreen() {
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
+            placeholderTextColor="#aaa"
           />
 
           <TextInput
@@ -119,6 +121,7 @@ export default function LoginScreen() {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
+            placeholderTextColor="#aaa"
           />
 
           <TouchableOpacity

@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -6,6 +7,7 @@ import React, {
   useState,
 } from "react";
 import { ApiClient } from "../services/api-client";
+import { SyncService } from "../services/sync-service";
 
 export type StudySession = {
   id: string;
@@ -44,8 +46,23 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const fetchSessions = async () => {
     try {
       setLoading(true);
+
+      // First load local data immediately
+      const localData = await SyncService.getLocalData();
+      if (localData.studySessions && localData.studySessions.length > 0) {
+        setSessions(localData.studySessions);
+      }
+
+      // Then sync with server in background
       const data = await ApiClient.getAllData();
       if (data?.studySessions) {
+        // Update local storage
+        await AsyncStorage.setItem(
+          "study_sessions",
+          JSON.stringify(data.studySessions)
+        );
+
+        // Update state
         setSessions(data.studySessions);
       }
     } catch (error) {
@@ -57,6 +74,20 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchSessions();
+
+    // Subscribe to data changes from SyncService
+    const unsubscribe = SyncService.subscribeToDataChanges(async () => {
+      try {
+        const localData = await SyncService.getLocalData();
+        if (localData.studySessions) {
+          setSessions(localData.studySessions);
+        }
+      } catch (error) {
+        console.error("Error updating study sessions after sync:", error);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const refreshSessions = async () => {
@@ -66,8 +97,24 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const addSession = async (session: Omit<StudySession, "id">) => {
     try {
       setLoading(true);
+
+      // Create temp ID for local storage
+      const tempId = `temp_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+      const newSession = {
+        ...session,
+        id: tempId,
+      };
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedSessions = [...localData.studySessions, newSession];
+      await SyncService.updateAndSync(undefined, undefined, updatedSessions);
+
+      // Sync with server in background
       await ApiClient.createStudySession(session);
-      await fetchSessions();
+      await fetchSessions(); // This will replace temp IDs with server IDs
     } catch (error) {
       console.error("Failed to add study session:", error);
     } finally {
@@ -78,8 +125,16 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const removeSession = async (id: string) => {
     try {
       setLoading(true);
+
+      // Update local data immediately
+      const localData = await SyncService.getLocalData();
+      const updatedSessions = localData.studySessions.filter(
+        (s: StudySession) => s.id !== id
+      );
+      await SyncService.updateAndSync(undefined, undefined, updatedSessions);
+
+      // Sync with server in background
       await ApiClient.deleteStudySession(id);
-      await fetchSessions();
     } catch (error) {
       console.error("Failed to delete study session:", error);
     } finally {
