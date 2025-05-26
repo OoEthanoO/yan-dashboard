@@ -144,12 +144,39 @@ IssueSchema.pre("findOneAndUpdate", function (next) {
   next();
 });
 
+const VersionHistorySchema = new mongoose.Schema({
+  version: { type: String, required: true, unique: true },
+  date: { type: String, required: true },
+  type: {
+    type: String,
+    enum: ["initial", "production", "rc", "beta", "alpha"],
+    required: true,
+  },
+  changes: [{ type: String }],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+VersionHistorySchema.pre("save", function (next) {
+  this.updatedAt = new Date();
+  next();
+});
+
+VersionHistorySchema.pre("findOneAndUpdate", function (next) {
+  this.set({ updatedAt: new Date() });
+  next();
+});
+
 const Issue = mongoose.model("Issue", IssueSchema);
 
 const User = mongoose.model("User", UserSchema);
 const Assignment = mongoose.model("Assignment", AssignmentSchema);
 const Course = mongoose.model("Course", CourseSchema);
 const StudySession = mongoose.model("StudySession", StudySessionSchema);
+
+const VersionHistory =
+  mongoose.models.VersionHistory ||
+  mongoose.model("VersionHistory", VersionHistorySchema);
 
 const authenticate = async (req, res, next) => {
   try {
@@ -935,6 +962,18 @@ app.get("/api/issues", authenticate, async (req, res) => {
   } catch (err) {
     console.error("Issues fetch error:", err);
     res.status(500).json({ error: "Failed to fetch issues data" });
+  }
+});
+
+app.get("/api/version-history", async (req, res) => {
+  try {
+    const versionHistory = await VersionHistory.find().sort({ createdAt: -1 });
+    res.json({ success: true, versionHistory });
+  } catch (error) {
+    console.error("Error fetching version history:", error);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch version history" });
   }
 });
 

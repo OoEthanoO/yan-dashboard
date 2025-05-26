@@ -10,7 +10,9 @@ const listeners: DataChangeListener[] = [];
 
 export const SyncService = {
   subscribeToDataChanges: (listener: DataChangeListener) => {
+    // console.log("SUBSCRIBE TO DATA CHANGES");
     listeners.push(listener);
+    // console.log("Current listeners count:", listeners.length);
     return () => {
       const index = listeners.indexOf(listener);
       if (index !== -1) listeners.splice(index, 1);
@@ -18,7 +20,30 @@ export const SyncService = {
   },
 
   notifyDataChanged: () => {
+    // console.log("NOTIFY DATA CHANGED");
     listeners.forEach((listener) => listener());
+  },
+
+  getLocalData: async () => {
+    try {
+      // console.log("GET LOCAL DATA");
+      const [assignmentsStr, coursesStr, studySessionsStr] = await Promise.all([
+        AsyncStorage.getItem("assignments"),
+        AsyncStorage.getItem("courses"),
+        AsyncStorage.getItem("study_sessions"),
+      ]);
+
+      // console.log("GOT LOCAL DATA");
+
+      return {
+        assignments: assignmentsStr ? JSON.parse(assignmentsStr) : [],
+        courses: coursesStr ? JSON.parse(coursesStr) : [],
+        studySessions: studySessionsStr ? JSON.parse(studySessionsStr) : [],
+      };
+    } catch (error) {
+      console.error("Failed to load local data:", error);
+      return { assignments: [], courses: [], studySessions: [] };
+    }
   },
 
   updateAndSync: async (
@@ -27,25 +52,64 @@ export const SyncService = {
     updatedStudySessions?: StudySession[]
   ) => {
     try {
+      console.log("UPDATE AND SYNC");
+      const updatePromises = [];
+
       if (updatedAssignments) {
-        await AsyncStorage.setItem(
-          "assignments",
-          JSON.stringify(updatedAssignments)
+        // Ensure grades are properly formatted
+        const processedAssignments = updatedAssignments.map((a) => ({
+          ...a,
+          grade: a.grade !== undefined ? Number(a.grade) : undefined,
+          isGradeEncrypted: false,
+        }));
+
+        updatePromises.push(
+          AsyncStorage.setItem(
+            "assignments",
+            JSON.stringify(processedAssignments)
+          )
         );
       }
 
       if (updatedCourses) {
-        await AsyncStorage.setItem("courses", JSON.stringify(updatedCourses));
-      }
+        // Ensure grades are properly formatted
+        const processedCourses = updatedCourses.map((c) => ({
+          ...c,
+          grade: c.grade !== undefined ? Number(c.grade) : undefined,
+          isGradeEncrypted: false,
+          gradeHistory: c.gradeHistory?.map((point) => ({
+            ...point,
+            grade: Number(point.grade),
+            isEncrypted: false,
+          })),
+        }));
 
-      if (updatedStudySessions) {
-        await AsyncStorage.setItem(
-          "study_sessions",
-          JSON.stringify(updatedStudySessions)
+        updatePromises.push(
+          AsyncStorage.setItem("courses", JSON.stringify(processedCourses))
         );
       }
 
-      return await SyncService.performFullSync();
+      if (updatedStudySessions) {
+        updatePromises.push(
+          AsyncStorage.setItem(
+            "study_sessions",
+            JSON.stringify(updatedStudySessions)
+          )
+        );
+      }
+
+      await Promise.all(updatePromises);
+
+      // Notify listeners that local data has changed
+      SyncService.notifyDataChanged();
+
+      // Then perform server sync in the background
+      // We don't await this so the function can return immediately after local update
+      SyncService.performFullSync().catch((error) => {
+        console.error("Background sync failed:", error);
+      });
+
+      return true;
     } catch (error) {
       console.error("Failed to update and sync data:", error);
       throw error;
@@ -54,6 +118,7 @@ export const SyncService = {
 
   performFullSync: async () => {
     try {
+      console.log("PERFORM FULL SYNC");
       const [assignmentsStr, coursesStr, studySessionsStr] = await Promise.all([
         AsyncStorage.getItem("assignments"),
         AsyncStorage.getItem("courses"),
@@ -84,17 +149,64 @@ export const SyncService = {
       const storageUpdates = [];
 
       if (response?.assignments?.length > 0) {
+        let processedAssignments = response.assignments;
+
+        // console.log("Processing assignments for sync:", processedAssignments);
+
+        // Check if there are any encrypted grades that need to be decrypted
+        // processedAssignments = await EncryptionService.decryptAssignments(
+        //   processedAssignments
+        // );
+
+        // console.log(
+        //   "Processed assignments preformatting:",
+        //   processedAssignments
+        // );
+
+        // Format grades as numbers
+        processedAssignments = processedAssignments.map((a: Assignment) => ({
+          ...a,
+          grade: a.grade !== undefined ? Number(a.grade) : undefined,
+          isGradeEncrypted: false,
+        }));
+
+        // console.log("Processed assignments:", processedAssignments);
+
         storageUpdates.push(
           AsyncStorage.setItem(
             "assignments",
-            JSON.stringify(response.assignments)
+            JSON.stringify(processedAssignments)
           )
         );
       }
 
+      // Ensure courses are properly decrypted
       if (response?.courses?.length > 0) {
+        let processedCourses = response.courses;
+
+        console.log("Processing courses for sync:", processedCourses);
+
+        // Check if there are any encrypted grades that need to be decrypted
+        // processedCourses = await EncryptionService.decryptCourses(
+        //   processedCourses
+        // );
+
+        console.log("Processed courses preformatting:", processedCourses);
+
+        // Format grades as numbers
+        processedCourses = processedCourses.map((c: Course) => ({
+          ...c,
+          grade: c.grade !== undefined ? Number(c.grade) : undefined,
+          isGradeEncrypted: false,
+          gradeHistory: c.gradeHistory?.map((point) => ({
+            ...point,
+            grade: Number(point.grade),
+            isEncrypted: false,
+          })),
+        }));
+
         storageUpdates.push(
-          AsyncStorage.setItem("courses", JSON.stringify(response.courses))
+          AsyncStorage.setItem("courses", JSON.stringify(processedCourses))
         );
       }
 
@@ -111,6 +223,7 @@ export const SyncService = {
 
       SyncService.notifyDataChanged();
 
+      console.log("PERFORMED FULL SYNC");
       return response;
     } catch (error) {
       console.error("Failed to sync with server:", error);
@@ -123,6 +236,8 @@ export const SyncService = {
     updatedCourses?: Course[],
     updatedStudySessions?: StudySession[]
   ) => {
+    console.log("SYNC ALL DATA");
+
     return SyncService.updateAndSync(
       updatedAssignments,
       updatedCourses,
@@ -132,19 +247,60 @@ export const SyncService = {
 
   refreshAllData: async () => {
     try {
+      console.log("REFRESH ALL DATA");
       const data = await ApiClient.getAllData();
+
+      // Ensure data is properly decrypted before storage
+      let assignments = data?.assignments || [];
+      let courses = data?.courses || [];
+
+      // Decrypt data if needed
+      if (assignments.some((a: Assignment) => a.isGradeEncrypted)) {
+        assignments = await EncryptionService.decryptAssignments(assignments);
+      }
+
+      if (
+        courses.some(
+          (c: Course) =>
+            c.isGradeEncrypted || c.gradeHistory?.some((p) => p.isEncrypted)
+        )
+      ) {
+        courses = await EncryptionService.decryptCourses(courses);
+      }
 
       const storageUpdates = [];
 
-      if (data?.assignments) {
+      if (assignments.length > 0) {
+        // Format the now-decrypted data for storage
+        const processedAssignments = assignments.map((a: Assignment) => ({
+          ...a,
+          grade: a.grade !== undefined ? Number(a.grade) : undefined,
+          isGradeEncrypted: false,
+        }));
+
         storageUpdates.push(
-          AsyncStorage.setItem("assignments", JSON.stringify(data.assignments))
+          AsyncStorage.setItem(
+            "assignments",
+            JSON.stringify(processedAssignments)
+          )
         );
       }
 
-      if (data?.courses) {
+      if (courses.length > 0) {
+        // Format the now-decrypted data for storage
+        const processedCourses = courses.map((c: Course) => ({
+          ...c,
+          grade: c.grade !== undefined ? Number(c.grade) : undefined,
+          isGradeEncrypted: false,
+          gradeHistory: c.gradeHistory?.map((point) => ({
+            ...point,
+            grade: Number(point.grade),
+            isEncrypted: false,
+          })),
+        }));
+
         storageUpdates.push(
-          AsyncStorage.setItem("courses", JSON.stringify(data.courses))
+          AsyncStorage.setItem("courses", JSON.stringify(processedCourses))
         );
       }
 

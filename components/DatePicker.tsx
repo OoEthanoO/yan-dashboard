@@ -17,6 +17,64 @@ export function formatDateToYYYYMMDD(date: Date): string {
   )}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+export const parseLocalDate = (dateString: string): Date => {
+  var offset = 0;
+  // if (dateString.length === 10) {
+  //   offset = 1;
+  // }
+
+  const parts = dateString.split("-");
+
+  // remove end bit of parts[2] to 2 characters
+  parts[2] = parts[2].slice(0, 2);
+
+  const numberParts = parts.map(Number);
+
+  console.log("Parsed date string:", dateString);
+  console.log("Parsed date parts:", numberParts);
+  return new Date(numberParts[0], numberParts[1] - 1, numberParts[2] + offset);
+};
+
+export const parseLocalDateToComponents = (dateString: string): number[] => {
+  const parts = dateString.split("-");
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+
+  return [month, day, year];
+};
+
+export const componentsToMMMDDYYYY = (components: number[]): string => {
+  const monthNames = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+
+  const month = monthNames[components[0] - 1];
+  const day = String(components[1]).padStart(2, "0");
+  const year = components[2];
+
+  return `${month} ${day}, ${year}`;
+};
+
+export const dateToComponents = (date: Date): number[] => {
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const year = date.getFullYear();
+
+  return [month, day, year];
+};
+
 export default function DatePicker({
   value,
   onChange,

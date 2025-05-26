@@ -156,6 +156,9 @@ export default function KnownIssuesScreen() {
                     <Text style={styles.issueDescription}>
                       {issue.description}
                     </Text>
+                    <View style={styles.idContainer}>
+                      <Text style={styles.idText}>ID: {issue.id}</Text>
+                    </View>
                   </View>
                 ))
               )}
@@ -169,7 +172,9 @@ export default function KnownIssuesScreen() {
                   color="#f59e0b"
                   style={styles.sectionIcon}
                 />
-                <Text style={styles.sectionTitle}>Planned Features</Text>
+                <Text style={styles.sectionTitle}>
+                  Planned Features & Improvements
+                </Text>
               </View>
 
               {plannedFeatures.length === 0 ? (
@@ -191,6 +196,9 @@ export default function KnownIssuesScreen() {
                     <Text style={styles.issueDescription}>
                       {feature.description}
                     </Text>
+                    <View style={styles.idContainer}>
+                      <Text style={styles.idText}>ID: {feature.id}</Text>
+                    </View>
                   </View>
                 ))
               )}
@@ -377,5 +385,15 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 14,
+  },
+  idContainer: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  idText: {
+    fontSize: 12,
+    color: "#94a3b8",
+    fontFamily: "monospace",
   },
 });
