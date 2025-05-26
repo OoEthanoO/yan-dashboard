@@ -1,3 +1,4 @@
+import { EncryptionService } from "@/services/encryption-service";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import CryptoJS from "crypto-js";
 import React, {
@@ -8,7 +9,6 @@ import React, {
   useState,
 } from "react";
 import { ApiClient } from "../services/api-client";
-import { SyncService } from "../services/sync-service";
 
 type AuthUser = {
   id: string;
@@ -77,38 +77,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(email: string, password: string) {
+    setLoading(true);
     try {
-      setLoading(true);
+      const user = await ApiClient.login(email, password);
 
-      const response = await ApiClient.login(email, password);
-
-      // Store auth information
-      // await AsyncStorage.setItem("auth_token", response.token);
-      await AsyncStorage.setItem(
-        "user_data",
-        JSON.stringify({
-          // id: response.user.id,
-          email: response.user.email,
-          name: response.user.name,
-          lastSync: response.user.lastSync,
-        })
-      );
-
-      // Generate password hash for encryption
       const passwordHash = CryptoJS.SHA256(password).toString();
       await AsyncStorage.setItem("password_hash", passwordHash);
 
-      setUser({
-        id: response.user.id,
-        email: response.user.email,
-        name: response.user.name,
-        lastSync: response.user.lastSync,
-      });
+      await EncryptionService.retrieveEncryptionKeyFromServer();
 
-      // After login, fetch all data from server
-      await SyncService.refreshAllData();
+      setUser(user);
+
+      await syncData();
+
+      return user;
     } catch (error) {
-      console.error("Login failed:", error);
+      console.error("Login error:", error);
       throw error;
     } finally {
       setLoading(false);
