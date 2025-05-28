@@ -1,3 +1,4 @@
+import { OperationQueue } from "@/services/operation-queue-service";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
@@ -56,7 +57,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const fetchAssignments = async () => {
     try {
       setLoading(true);
-
       // First, load local data immediately
       const localData = await SyncService.getLocalData();
       if (localData.assignments && localData.assignments.length > 0) {
@@ -150,38 +150,51 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Process grade encryption if needed
-      let processedAssignment = { ...assignment };
-      if (assignment.grade !== undefined) {
-        const encryptedGrade =
-          typeof assignment.grade === "string"
-            ? await EncryptionService.encryptGradeData(Number(assignment.grade))
-            : await EncryptionService.encryptGradeData(assignment.grade);
+      await OperationQueue.enqueue({
+        id: `add-assignment-${Date.now()}`,
+        type: "add",
+        context: "assignments",
+        execute: async () => {
+          let processedAssignment = { ...assignment };
+          if (assignment.grade !== undefined) {
+            const encryptedGrade =
+              typeof assignment.grade === "string"
+                ? await EncryptionService.encryptGradeData(
+                    Number(assignment.grade)
+                  )
+                : await EncryptionService.encryptGradeData(assignment.grade);
 
-        processedAssignment = {
-          ...assignment,
-          grade: encryptedGrade,
-          isGradeEncrypted: true,
-        };
-      }
+            processedAssignment = {
+              ...assignment,
+              grade: encryptedGrade,
+            };
+          }
 
-      // Create temp ID for local storage
-      const tempId = `temp_${Date.now()}_${Math.random()
-        .toString(36)
-        .substring(2, 9)}`;
-      const newAssignment = {
-        ...processedAssignment,
-        id: tempId,
-      };
+          const tempId = `temp_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 9)}`;
+          const newAssignment = {
+            ...processedAssignment,
+            id: tempId,
+          };
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const updatedAssignments = [...localData.assignments, newAssignment];
-      await SyncService.updateAndSync(updatedAssignments);
+          const localData = await SyncService.getLocalData();
+          const updatedAssignments = [...localData.assignments, newAssignment];
+          await SyncService.updateAndSync(updatedAssignments);
 
-      // Sync with server in background
-      // await ApiClient.createAssignment(processedAssignment);
-      await fetchAssignments(); // This will replace temp IDs with server IDs
+          setAssignments((current) => [
+            ...current,
+            {
+              ...newAssignment,
+              grade:
+                newAssignment.grade !== undefined
+                  ? Number(newAssignment.grade)
+                  : undefined,
+              isGradeEncrypted: false,
+            },
+          ]);
+        },
+      });
     } catch (error) {
       console.error("Failed to add assignment:", error);
     } finally {
@@ -193,19 +206,43 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const updatedAssignments = localData.assignments.filter(
-        (a: Assignment) => a.id !== id
-      );
-      await SyncService.updateAndSync(updatedAssignments);
+      await OperationQueue.enqueue({
+        id: `remove-assignment-${id}-${Date.now()}`,
+        type: "remove",
+        context: "assignments",
+        execute: async () => {
+          await ApiClient.markAssignmentForDeletion(id);
 
-      // Sync with server in background
-      await ApiClient.deleteAssignment(id);
-      console.log(`Assignment ${id} deleted successfully`);
-      // No need to call fetchAssignments as the local change is already reflected
+          const localData = await SyncService.getLocalData();
+          const updatedAssignments = localData.assignments.filter(
+            (a: Assignment) => a.id !== id
+          );
 
-      fetchAssignments();
+          await AsyncStorage.setItem(
+            "assignments",
+            JSON.stringify(updatedAssignments)
+          );
+
+          setAssignments((current) => current.filter((a) => a.id !== id));
+
+          try {
+            await ApiClient.deleteAssignment(id);
+            console.log(`Assignment ${id} deleted successfully`);
+
+            // 5. Update local data again to ensure consistency
+            await SyncService.updateLocalData(
+              updatedAssignments,
+              undefined,
+              undefined,
+              false // Don't trigger another sync
+            );
+          } catch (error) {
+            console.error(`Error deleting assignment ${id} on server:`, error);
+            // Still consider operation complete even if server fails
+            // The deleted_assignments list will handle it in future syncs
+          }
+        },
+      });
     } catch (error) {
       console.error("Failed to delete assignment:", error);
     } finally {
@@ -219,49 +256,68 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   ) => {
     try {
       setLoading(true);
-      const numericGrade =
-        grade === undefined
-          ? undefined
-          : typeof grade === "string"
-          ? Number(grade)
-          : grade;
 
-      const assignment = assignments.find((a) => a.id === id);
-      if (!assignment) {
-        throw new Error("Assignment not found");
-      }
+      await OperationQueue.enqueue({
+        id: `grade-assignment-${id}-${Date.now()}`,
+        type: "update",
+        context: "assignments",
+        execute: async () => {
+          const numericGrade =
+            grade === undefined
+              ? undefined
+              : typeof grade === "string"
+              ? Number(grade)
+              : grade;
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const updatedAssignments = localData.assignments.map((a: Assignment) => {
-        if (a.id === id) {
-          return {
-            ...a,
-            grade: numericGrade,
-          };
-        }
-        return a;
+          const assignment = assignments.find((a) => a.id === id);
+          if (!assignment) {
+            throw new Error("Assignment not found");
+          }
+
+          // Update local data immediately
+          const localData = await SyncService.getLocalData();
+          const updatedAssignments = localData.assignments.map(
+            (a: Assignment) => {
+              if (a.id === id) {
+                return {
+                  ...a,
+                  grade: numericGrade,
+                };
+              }
+              return a;
+            }
+          );
+
+          await SyncService.updateAndSync(updatedAssignments);
+
+          // Update local state
+          setAssignments((current) =>
+            current.map((a) => {
+              if (a.id === id) {
+                return { ...a, grade: numericGrade };
+              }
+              return a;
+            })
+          );
+
+          // Sync with server in background
+          const dueDate = assignment?.dueDate;
+          if (dueDate) {
+            const now = new Date();
+            if (new Date(dueDate) <= now) {
+              const encryptedGrade =
+                numericGrade !== undefined
+                  ? await EncryptionService.encryptGradeData(numericGrade)
+                  : undefined;
+
+              await ApiClient.updateAssignment(id, {
+                grade: encryptedGrade,
+                isGradeEncrypted: encryptedGrade !== undefined,
+              });
+            }
+          }
+        },
       });
-      await SyncService.updateAndSync(updatedAssignments);
-
-      // Sync with server in background
-      const dueDate = assignment?.dueDate;
-      if (dueDate) {
-        const now = new Date();
-        if (new Date(dueDate) <= now) {
-          const encryptedGrade =
-            numericGrade !== undefined
-              ? await EncryptionService.encryptGradeData(numericGrade)
-              : undefined;
-
-          await ApiClient.updateAssignment(id, {
-            grade: encryptedGrade,
-            isGradeEncrypted: encryptedGrade !== undefined,
-          });
-        } else {
-          console.warn("Cannot grade future assignments");
-        }
-      }
     } catch (error) {
       console.error("Failed to update assignment grade:", error);
     } finally {
@@ -274,31 +330,49 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const assignment = localData.assignments.find(
-        (a: Assignment) => a.id === id
-      );
-      if (assignment) {
-        const updatedAssignments = localData.assignments.map(
-          (a: Assignment) => {
-            if (a.id === id) {
-              return {
-                ...a,
-                completed: !a.completed,
-              };
-            }
-            return a;
+      await OperationQueue.enqueue({
+        id: `toggle-assignment-${id}-${Date.now()}`,
+        type: "update",
+        context: "assignments",
+        execute: async () => {
+          // Update local data immediately
+          const localData = await SyncService.getLocalData();
+          const assignment = localData.assignments.find(
+            (a: Assignment) => a.id === id
+          );
+
+          if (assignment) {
+            const updatedAssignments = localData.assignments.map(
+              (a: Assignment) => {
+                if (a.id === id) {
+                  return {
+                    ...a,
+                    completed: !a.completed,
+                  };
+                }
+                return a;
+              }
+            );
+
+            await SyncService.updateAndSync(updatedAssignments);
+
+            // Update local state
+            setAssignments((current) =>
+              current.map((a) => {
+                if (a.id === id) {
+                  return { ...a, completed: !a.completed };
+                }
+                return a;
+              })
+            );
+
+            // Sync with server in background
+            await ApiClient.updateAssignment(id, {
+              completed: !assignment.completed,
+            });
           }
-        );
-
-        await SyncService.updateAndSync(updatedAssignments);
-
-        // Sync with server in background
-        await ApiClient.updateAssignment(id, {
-          completed: !assignment.completed,
-        });
-      }
+        },
+      });
     } catch (error) {
       console.error("Failed to toggle assignment completion:", error);
     } finally {
@@ -313,45 +387,54 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Process grade encryption if needed
-      let processedUpdate = { ...updatedData };
-      if (updatedData.grade !== undefined) {
-        let numericGrade: number | undefined;
+      await OperationQueue.enqueue({
+        id: `update-assignment-${id}-${Date.now()}`,
+        type: "update",
+        context: "assignments",
+        execute: async () => {
+          // Process grade encryption if needed
+          let processedUpdate = { ...updatedData };
+          if (updatedData.grade !== undefined) {
+            let numericGrade: number | undefined;
 
-        if (typeof updatedData.grade === "string") {
-          numericGrade = Number(updatedData.grade);
-        } else {
-          numericGrade = updatedData.grade;
-        }
+            if (typeof updatedData.grade === "string") {
+              numericGrade = Number(updatedData.grade);
+            } else {
+              numericGrade = updatedData.grade;
+            }
 
-        const encryptedGrade =
-          numericGrade !== undefined
-            ? await EncryptionService.encryptGradeData(numericGrade)
-            : undefined;
+            const encryptedGrade =
+              numericGrade !== undefined
+                ? await EncryptionService.encryptGradeData(numericGrade)
+                : undefined;
 
-        processedUpdate = {
-          ...updatedData,
-          grade: encryptedGrade,
-          isGradeEncrypted: encryptedGrade !== undefined,
-        };
-      }
+            processedUpdate = {
+              ...updatedData,
+              grade: encryptedGrade,
+              isGradeEncrypted: encryptedGrade !== undefined,
+            };
+          }
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const updatedAssignments = localData.assignments.map((a: Assignment) => {
-        if (a.id === id) {
-          return {
-            ...a,
-            ...updatedData, // Use unencrypted version for local storage
-          };
-        }
-        return a;
+          // Update local data immediately
+          const localData = await SyncService.getLocalData();
+          const updatedAssignments = localData.assignments.map(
+            (a: Assignment) => {
+              if (a.id === id) {
+                return {
+                  ...a,
+                  ...updatedData, // Use unencrypted version for local storage
+                };
+              }
+              return a;
+            }
+          );
+
+          await SyncService.updateAndSync(updatedAssignments);
+
+          // Sync with server in background
+          await ApiClient.updateAssignment(id, processedUpdate);
+        },
       });
-
-      await SyncService.updateAndSync(updatedAssignments);
-
-      // Sync with server in background
-      await ApiClient.updateAssignment(id, processedUpdate);
     } catch (error) {
       console.error("Failed to update assignment:", error);
     } finally {

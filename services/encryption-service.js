@@ -6,8 +6,14 @@ const AI_PUBLIC_KEY = "AI_MODEL_PUBLIC_KEY_2023";
 
 const USER_ENCRYPTION_KEY = "user_encryption_key";
 
+let keyMemoryCache = null;
+
 export const EncryptionService = {
   getUserEncryptionKey: async () => {
+    if (keyMemoryCache) {
+      return keyMemoryCache;
+    }
+
     // console.log(
     //   "[GET_KEY] Attempting to get user encryption key from server first"
     // );
@@ -18,6 +24,7 @@ export const EncryptionService = {
       // console.log(
       //   "[GET_KEY] Successfully retrieved encryption key from server"
       // );
+      keyMemoryCache = userKey;
       return userKey;
     }
 

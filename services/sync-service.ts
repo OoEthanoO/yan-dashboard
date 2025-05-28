@@ -8,7 +8,140 @@ import { EncryptionService } from "./encryption-service";
 type DataChangeListener = () => void;
 const listeners: DataChangeListener[] = [];
 
+type SyncLock = {
+  isLocked: boolean;
+  operation: string | null;
+  operationStartTime: number | null;
+  priority: number; // Higher number = higher priority
+};
+
+const syncLock: SyncLock = {
+  isLocked: false,
+  operation: null,
+  operationStartTime: null,
+  priority: 0,
+};
+
+let activeSyncAbortController: AbortController | null = null;
+
 export const SyncService = {
+  isSyncInProgress: () => syncLock.isLocked,
+
+  getCurrentSyncInfo: () => ({
+    inProgress: syncLock.isLocked,
+    operation: syncLock.operation,
+    duration: syncLock.operationStartTime
+      ? Math.round((Date.now() - syncLock.operationStartTime) / 1000)
+      : 0,
+  }),
+
+  acquireLock: async (
+    operation: string,
+    priority: number = 1
+  ): Promise<boolean> => {
+    // If no lock, acquire immediately
+    if (!syncLock.isLocked) {
+      syncLock.isLocked = true;
+      syncLock.operation = operation;
+      syncLock.operationStartTime = Date.now();
+      syncLock.priority = priority;
+      console.log(
+        `[SYNC] Lock acquired by "${operation}" (priority: ${priority})`
+      );
+      return true;
+    }
+
+    // If lock exists but this operation has higher priority, try to interrupt
+    if (priority > syncLock.priority) {
+      console.log(
+        `[SYNC] Attempting to interrupt "${syncLock.operation}" for higher priority "${operation}"`
+      );
+
+      // Try to abort existing operation
+      if (activeSyncAbortController) {
+        activeSyncAbortController.abort();
+        activeSyncAbortController = null;
+      }
+
+      // Wait for existing operation to clean up (max 2 seconds)
+      const waitStart = Date.now();
+      while (syncLock.isLocked && Date.now() - waitStart < 2000) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      // If we successfully interrupted, take the lock
+      if (!syncLock.isLocked) {
+        syncLock.isLocked = true;
+        syncLock.operation = operation;
+        syncLock.operationStartTime = Date.now();
+        syncLock.priority = priority;
+        console.log(
+          `[SYNC] Lock acquired by "${operation}" after interrupting previous operation`
+        );
+        return true;
+      }
+
+      console.log(
+        `[SYNC] Failed to interrupt "${syncLock.operation}" for "${operation}"`
+      );
+    }
+
+    // If we can't acquire or interrupt, wait for lock to be released (max 5 seconds)
+    console.log(
+      `[SYNC] "${operation}" waiting for lock held by "${syncLock.operation}"`
+    );
+    const waitStart = Date.now();
+    while (syncLock.isLocked && Date.now() - waitStart < 5000) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    // If lock was released, acquire it
+    if (!syncLock.isLocked) {
+      syncLock.isLocked = true;
+      syncLock.operation = operation;
+      syncLock.operationStartTime = Date.now();
+      syncLock.priority = priority;
+      console.log(`[SYNC] Lock acquired by "${operation}" after waiting`);
+      return true;
+    }
+
+    // Failed to acquire lock
+    console.log(`[SYNC] "${operation}" failed to acquire lock after waiting`);
+    return false;
+  },
+
+  // Release lock for an operation
+  releaseLock: (operation: string): boolean => {
+    if (syncLock.operation === operation) {
+      syncLock.isLocked = false;
+      syncLock.operation = null;
+      syncLock.operationStartTime = null;
+      syncLock.priority = 0;
+      console.log(`[SYNC] Lock released by "${operation}"`);
+      return true;
+    } else if (syncLock.isLocked) {
+      console.log(
+        `[SYNC] "${operation}" attempted to release lock held by "${syncLock.operation}"`
+      );
+    }
+    return false;
+  },
+
+  // Force release lock (emergency use only)
+  forceReleaseLock: () => {
+    const prevOp = syncLock.operation;
+    syncLock.isLocked = false;
+    syncLock.operation = null;
+    syncLock.operationStartTime = null;
+    syncLock.priority = 0;
+    if (activeSyncAbortController) {
+      activeSyncAbortController.abort();
+      activeSyncAbortController = null;
+    }
+    console.log(`[SYNC] Lock force released from "${prevOp}"`);
+    return true;
+  },
+
   subscribeToDataChanges: (listener: DataChangeListener) => {
     // console.log("SUBSCRIBE TO DATA CHANGES");
     listeners.push(listener);
@@ -49,8 +182,20 @@ export const SyncService = {
   updateAndSync: async (
     updatedAssignments?: Assignment[],
     updatedCourses?: Course[],
-    updatedStudySessions?: StudySession[]
+    updatedStudySessions?: StudySession[],
+    performSync: boolean = true
   ) => {
+    const operation = `updateAndSync-${Date.now()}`;
+    // User operations have higher priority (2) than background syncs (1)
+    const lockAcquired = await SyncService.acquireLock(operation, 2);
+
+    if (!lockAcquired) {
+      console.error(`[SYNC] Failed to acquire lock for "${operation}"`);
+      throw new Error(
+        "Could not acquire sync lock - another operation is in progress"
+      );
+    }
+
     try {
       console.log("UPDATE AND SYNC");
       const updatePromises = [];
@@ -105,25 +250,62 @@ export const SyncService = {
 
       // Then perform server sync in the background
       // We don't await this so the function can return immediately after local update
-      SyncService.performFullSync().catch((error) => {
-        console.error("Background sync failed:", error);
-      });
+      if (performSync) {
+        // Don't await this to keep the function responsive
+        SyncService.performFullSync(false).catch((error) => {
+          console.error("[SYNC] Background sync failed:", error);
+        });
+      }
 
       return true;
     } catch (error) {
-      console.error("Failed to update and sync data:", error);
+      console.error(`[SYNC] Failed to update and sync data:`, error);
       throw error;
+    } finally {
+      SyncService.releaseLock(operation);
     }
   },
 
-  performFullSync: async () => {
+  performFullSync: async (isPeriodic: boolean = true) => {
+    const operation = `fullSync-${
+      isPeriodic ? "periodic" : "manual"
+    }-${Date.now()}`;
+    // Periodic syncs have lower priority (1) than user operations (2)
+    const priority = isPeriodic ? 1 : 2;
+
+    // Try to acquire lock
+    const lockAcquired = await SyncService.acquireLock(operation, priority);
+    if (!lockAcquired) {
+      console.log(
+        `[SYNC] Skipping sync "${operation}" - couldn't acquire lock`
+      );
+      return null; // Skip sync if lock can't be acquired
+    }
+
+    // Create abort controller for this sync
+    activeSyncAbortController = new AbortController();
+    const signal = activeSyncAbortController.signal;
+
     try {
-      console.log("PERFORM FULL SYNC");
+      console.log(`[SYNC] Starting full sync (periodic: ${isPeriodic})`);
+
+      // Check if operation was aborted
+      if (signal.aborted) {
+        console.log(`[SYNC] "${operation}" aborted before starting`);
+        throw new Error("Sync aborted");
+      }
+
       const [assignmentsStr, coursesStr, studySessionsStr] = await Promise.all([
         AsyncStorage.getItem("assignments"),
         AsyncStorage.getItem("courses"),
         AsyncStorage.getItem("study_sessions"),
       ]);
+
+      // Check if operation was aborted
+      if (signal.aborted) {
+        console.log(`[SYNC] "${operation}" aborted after loading local data`);
+        throw new Error("Sync aborted");
+      }
 
       const assignments = assignmentsStr ? JSON.parse(assignmentsStr) : [];
       const courses = coursesStr ? JSON.parse(coursesStr) : [];
@@ -138,11 +320,23 @@ export const SyncService = {
         courses
       );
 
+      // Check if operation was aborted
+      if (signal.aborted) {
+        console.log(`[SYNC] "${operation}" aborted after processing data`);
+        throw new Error("Sync aborted");
+      }
+
       const response = await ApiClient.syncData(
         processedAssignments,
         processedCourses,
         studySessions
       );
+
+      // Check if operation was aborted
+      if (signal.aborted) {
+        console.log(`[SYNC] "${operation}" aborted after API call`);
+        throw new Error("Sync aborted");
+      }
 
       await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
 
@@ -151,26 +345,12 @@ export const SyncService = {
       if (response?.assignments?.length > 0) {
         let processedAssignments = response.assignments;
 
-        // console.log("Processing assignments for sync:", processedAssignments);
-
-        // Check if there are any encrypted grades that need to be decrypted
-        // processedAssignments = await EncryptionService.decryptAssignments(
-        //   processedAssignments
-        // );
-
-        // console.log(
-        //   "Processed assignments preformatting:",
-        //   processedAssignments
-        // );
-
         // Format grades as numbers
         processedAssignments = processedAssignments.map((a: Assignment) => ({
           ...a,
           grade: a.grade !== undefined ? Number(a.grade) : undefined,
           isGradeEncrypted: false,
         }));
-
-        // console.log("Processed assignments:", processedAssignments);
 
         storageUpdates.push(
           AsyncStorage.setItem(
@@ -180,18 +360,8 @@ export const SyncService = {
         );
       }
 
-      // Ensure courses are properly decrypted
       if (response?.courses?.length > 0) {
         let processedCourses = response.courses;
-
-        console.log("Processing courses for sync:", processedCourses);
-
-        // Check if there are any encrypted grades that need to be decrypted
-        // processedCourses = await EncryptionService.decryptCourses(
-        //   processedCourses
-        // );
-
-        console.log("Processed courses preformatting:", processedCourses);
 
         // Format grades as numbers
         processedCourses = processedCourses.map((c: Course) => ({
@@ -219,15 +389,33 @@ export const SyncService = {
         );
       }
 
+      // Check if operation was aborted before final storage update
+      if (signal.aborted) {
+        console.log(`[SYNC] "${operation}" aborted before storage update`);
+        throw new Error("Sync aborted");
+      }
+
       await Promise.all(storageUpdates);
 
       SyncService.notifyDataChanged();
 
-      console.log("PERFORMED FULL SYNC");
+      console.log(`[SYNC] COMPLETED FULL SYNC (${operation})`);
       return response;
     } catch (error) {
-      console.error("Failed to sync with server:", error);
+      if (signal.aborted) {
+        console.log(`[SYNC] "${operation}" was aborted`);
+      } else {
+        console.error(`[SYNC] Failed to sync with server:`, error);
+      }
       throw error;
+    } finally {
+      SyncService.releaseLock(operation);
+      if (
+        activeSyncAbortController &&
+        activeSyncAbortController.signal === signal
+      ) {
+        activeSyncAbortController = null;
+      }
     }
   },
 
@@ -236,7 +424,7 @@ export const SyncService = {
     updatedCourses?: Course[],
     updatedStudySessions?: StudySession[]
   ) => {
-    console.log("SYNC ALL DATA");
+    console.log("[SYNC] SYNC ALL DATA");
 
     return SyncService.updateAndSync(
       updatedAssignments,
@@ -246,8 +434,18 @@ export const SyncService = {
   },
 
   refreshAllData: async () => {
+    const operation = `refreshAllData-${Date.now()}`;
+    const lockAcquired = await SyncService.acquireLock(operation, 2);
+
+    if (!lockAcquired) {
+      console.error(`[SYNC] Failed to acquire lock for "${operation}"`);
+      throw new Error(
+        "Could not acquire sync lock - another operation is in progress"
+      );
+    }
+
     try {
-      console.log("REFRESH ALL DATA");
+      console.log("[SYNC] REFRESH ALL DATA");
       const data = await ApiClient.getAllData();
 
       // Ensure data is properly decrypted before storage
@@ -318,8 +516,78 @@ export const SyncService = {
       SyncService.notifyDataChanged();
       return data;
     } catch (error) {
-      console.error("Failed to refresh data from server:", error);
+      console.error(`[SYNC] Failed to refresh data from server:`, error);
       throw error;
+    } finally {
+      SyncService.releaseLock(operation);
+    }
+  },
+
+  updateLocalData: async (
+    assignments?: Assignment[],
+    courses?: Course[],
+    studySessions?: StudySession[],
+    triggerSync: boolean = true
+  ) => {
+    const operation = `updateLocalData-${Date.now()}`;
+    const lockAcquired = await SyncService.acquireLock(operation, 2);
+
+    if (!lockAcquired) {
+      console.error(`[SYNC] Failed to acquire lock for "${operation}"`);
+      throw new Error(
+        "Could not acquire sync lock - another operation is in progress"
+      );
+    }
+
+    try {
+      const updatePromises = [];
+
+      if (assignments) {
+        // Format assignments for storage
+        const processedAssignments = assignments.map((a) => ({
+          ...a,
+          grade: a.grade !== undefined ? Number(a.grade) : undefined,
+          isGradeEncrypted: false,
+        }));
+
+        updatePromises.push(
+          AsyncStorage.setItem(
+            "assignments",
+            JSON.stringify(processedAssignments)
+          )
+        );
+      }
+
+      if (courses) {
+        // Similar processing for courses
+        updatePromises.push(
+          AsyncStorage.setItem("courses", JSON.stringify(courses))
+        );
+      }
+
+      if (studySessions) {
+        updatePromises.push(
+          AsyncStorage.setItem("study_sessions", JSON.stringify(studySessions))
+        );
+      }
+
+      await Promise.all(updatePromises);
+
+      // Notify listeners that data has changed
+      SyncService.notifyDataChanged();
+
+      // Optionally trigger a sync with the server
+      if (triggerSync) {
+        // Don't await this to keep function responsive
+        SyncService.performFullSync().catch(console.error);
+      }
+
+      return true;
+    } catch (error) {
+      console.error(`[SYNC] Failed to update local data:`, error);
+      throw error;
+    } finally {
+      SyncService.releaseLock(operation);
     }
   },
 };

@@ -93,6 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const performPeriodicSync = async () => {
     if (isSyncingRef.current || !user) {
+      console.log(
+        "Skipping periodic sync - another sync is already in progress"
+      );
       return;
     }
 
@@ -109,9 +112,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsOnline(true);
 
       console.log("Periodic sync completed successfully.");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Periodic sync failed:", error);
-      setIsOnline(false);
+      if (error.message !== "Sync aborted") {
+        setIsOnline(false);
+      }
 
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current);

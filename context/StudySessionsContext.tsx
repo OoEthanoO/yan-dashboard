@@ -1,3 +1,4 @@
+import { OperationQueue } from "@/services/operation-queue-service";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
@@ -110,23 +111,34 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Create temp ID for local storage
-      const tempId = `${Date.now()}_${Math.random()
-        .toString(36)
-        .substring(2, 9)}`;
-      const newSession = {
-        ...session,
-        id: tempId,
-      };
+      await OperationQueue.enqueue({
+        id: `add-session-${Date.now()}`,
+        type: "add",
+        context: "study-sessions",
+        execute: async () => {
+          // Create temp ID for local storage
+          const tempId = `${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 9)}`;
+          const newSession = {
+            ...session,
+            id: tempId,
+          };
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const updatedSessions = [...localData.studySessions, newSession];
-      await SyncService.updateAndSync(undefined, undefined, updatedSessions);
+          // Update local data immediately
+          const localData = await SyncService.getLocalData();
+          const updatedSessions = [...localData.studySessions, newSession];
+          await SyncService.updateAndSync(
+            undefined,
+            undefined,
+            updatedSessions
+          );
 
-      // Sync with server in background
-      // await ApiClient.createStudySession(session);
-      await fetchSessions(); // This will replace temp IDs with server IDs
+          // Sync with server in background
+          // await ApiClient.createStudySession(session);
+          await fetchSessions(); // This will replace temp IDs with server IDs
+        },
+      });
     } catch (error) {
       console.error("Failed to add study session:", error);
     } finally {
@@ -138,15 +150,26 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Update local data immediately
-      const localData = await SyncService.getLocalData();
-      const updatedSessions = localData.studySessions.filter(
-        (s: StudySession) => s.id !== id
-      );
-      await SyncService.updateAndSync(undefined, undefined, updatedSessions);
+      await OperationQueue.enqueue({
+        id: `remove-session-${id}-${Date.now()}`,
+        type: "remove",
+        context: "study-sessions",
+        execute: async () => {
+          // Update local data immediately
+          const localData = await SyncService.getLocalData();
+          const updatedSessions = localData.studySessions.filter(
+            (s: StudySession) => s.id !== id
+          );
+          await SyncService.updateAndSync(
+            undefined,
+            undefined,
+            updatedSessions
+          );
 
-      // Sync with server in background
-      await ApiClient.deleteStudySession(id);
+          // Sync with server in background
+          await ApiClient.deleteStudySession(id);
+        },
+      });
     } catch (error) {
       console.error("Failed to delete study session:", error);
     } finally {
