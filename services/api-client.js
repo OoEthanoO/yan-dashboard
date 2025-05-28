@@ -131,6 +131,18 @@ export class ApiClient {
   static async syncData(assignments, courses, studySessions) {
     const lastSyncTime = (await this.getLastSyncTime()) || new Date(0);
 
+    const timestampedData = {
+      assignments: await this.prepareItemsWithTimestamps(
+        assignments,
+        "assignments"
+      ),
+      courses: await this.prepareItemsWithTimestamps(courses, "courses"),
+      studySessions: await this.prepareItemsWithTimestamps(
+        studySessions,
+        "studySessions"
+      ),
+    };
+
     let deletedAssignmentIds = [];
     try {
       const deletedIdsStr = await AsyncStorage.getItem("deleted_assignments");
@@ -142,24 +154,24 @@ export class ApiClient {
     }
 
     const encryptedAssignments =
-      await EncryptionService.processAssignmentsForSync(assignments);
+      await EncryptionService.processAssignmentsForSync(
+        timestampedData.assignments
+      );
     const encryptedCourses = await EncryptionService.processCoursesForSync(
-      courses
+      timestampedData.courses
     );
 
     const response = await this.request("/sync", "POST", {
       assignments: encryptedAssignments,
       courses: encryptedCourses,
-      studySessions,
+      studySessions: timestampedData.studySessions,
       deletedAssignmentIds,
       lastSyncTime,
     });
 
-    // Clear deleted IDs after successful sync
     await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
     await this.setLastSyncTime(response.lastSync);
 
-    // Decrypt any data received from server
     if (response.data?.assignments?.length) {
       response.data.assignments = await EncryptionService.decryptAssignments(
         response.data.assignments
@@ -173,6 +185,20 @@ export class ApiClient {
     }
 
     return response.data;
+  }
+
+  static async prepareItemsWithTimestamps(items, storageKey) {
+    const timestampsStr = await AsyncStorage.getItem(
+      `${storageKey}_timestamps`
+    );
+    const timestamps = timestampsStr ? JSON.parse(timestampsStr) : {};
+
+    return items.map((item) => {
+      return {
+        ...item,
+        _lastModified: timestamps[item.id] || new Date().toISOString(),
+      };
+    });
   }
 
   static async markAssignmentForDeletion(id) {

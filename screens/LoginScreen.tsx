@@ -3,7 +3,6 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -55,20 +54,17 @@ export default function LoginScreen() {
   async function handleSubmit() {
     setError(null);
 
-    // Validate inputs
     if (!email || !password || (!isLogin && !name)) {
       setError("All fields are required");
       return;
     }
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setError("Please enter a valid email address");
       return;
     }
 
-    // Password validation
     if (password.length < 6) {
       setError("Password must be at least 6 characters long");
       return;
@@ -77,9 +73,7 @@ export default function LoginScreen() {
     try {
       if (isLogin) {
         await login(email, password);
-        // If we reach here, login was successful, error will be cleared by successful navigation
       } else {
-        // Name validation for registration
         if (name.trim().length < 2) {
           setError("Name must be at least 2 characters long");
           return;
@@ -89,11 +83,9 @@ export default function LoginScreen() {
     } catch (err: any) {
       console.error("Authentication error:", err);
 
-      // Handle specific error messages
       let errorMessage = "Authentication failed";
 
       if (err instanceof Error) {
-        // Check for specific error messages from the server
         if (
           err.message.includes("Invalid credentials") ||
           err.message.includes("Invalid email or password") ||
@@ -124,18 +116,8 @@ export default function LoginScreen() {
         }
       }
 
-      // Set error and ensure it stays visible
       setError(errorMessage);
       console.log("Error message set:", errorMessage);
-
-      // Use setTimeout to ensure error persists and show alert as backup
-      // setTimeout(() => {
-      //   if (errorMessage.includes("Invalid email or password")) {
-      //     Alert.alert("Login Failed", errorMessage, [
-      //       { text: "OK", style: "default" },
-      //     ]);
-      //   }
-      // }, 100);
     }
   }
 
@@ -192,7 +174,7 @@ export default function LoginScreen() {
               value={name}
               onChangeText={(text) => {
                 setName(text);
-                if (error) setError(null); // Clear error when user starts typing
+                if (error) setError(null);
               }}
               autoCapitalize="words"
               placeholderTextColor="#aaa"
@@ -205,7 +187,7 @@ export default function LoginScreen() {
             value={email}
             onChangeText={(text) => {
               setEmail(text);
-              if (error) setError(null); // Clear error when user starts typing
+              if (error) setError(null);
             }}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -218,7 +200,7 @@ export default function LoginScreen() {
             value={password}
             onChangeText={(text) => {
               setPassword(text);
-              if (error) setError(null); // Clear error when user starts typing
+              if (error) setError(null);
             }}
             secureTextEntry
             placeholderTextColor="#aaa"
@@ -242,7 +224,7 @@ export default function LoginScreen() {
             style={styles.switchButton}
             onPress={() => {
               setIsLogin(!isLogin);
-              setError(null); // Clear error when switching modes
+              setError(null);
             }}
           >
             <Text style={styles.switchButtonText}>

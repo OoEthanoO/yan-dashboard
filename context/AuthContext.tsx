@@ -56,7 +56,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const SYNC_INTERVAL = 5 * 60 * 1000;
 
-  // Web-specific beforeunload handler
   useEffect(() => {
     if (Platform.OS === "web") {
       const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -129,13 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const startPeriodicSync = () => {
-    // Clear any existing interval
-    // if (syncIntervalRef.current) {
-    //   clearInterval(syncIntervalRef.current);
-    // }
-    // // Start the periodic sync
-    // syncIntervalRef.current = setInterval(performPeriodicSync, SYNC_INTERVAL);
-    // console.log(`Periodic sync started with ${SYNC_INTERVAL / 1000}s interval`);
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+    }
+    syncIntervalRef.current = setInterval(performPeriodicSync, SYNC_INTERVAL);
+    console.log(`Periodic sync started with ${SYNC_INTERVAL / 1000}s interval`);
   };
 
   const stopPeriodicSync = () => {
@@ -167,24 +164,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (user && !loading) {
-      // User is authenticated, start periodic sync
       startPeriodicSync();
 
-      // Perform an initial sync after login
       performPeriodicSync();
     } else {
-      // User is not authenticated, stop periodic sync
       stopPeriodicSync();
     }
 
-    // Cleanup on unmount
     return () => {
       stopPeriodicSync();
     };
   }, [user, loading]);
 
   async function login(email: string, password: string) {
-    // setLoading(true);
     try {
       const user = await ApiClient.login(email, password);
 
@@ -195,7 +187,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(user);
 
-      // Set syncing state for login sync
       setIsSyncing(true);
 
       await syncData();
@@ -204,10 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return user;
     } catch (error) {
       console.error("Login error:", error);
-      // Make sure to re-throw the error so LoginScreen can catch it
       throw error;
     } finally {
-      // setLoading(false);
       setIsSyncing(false);
     }
   }

@@ -318,53 +318,91 @@ app.post("/api/sync", authenticate, async (req, res) => {
 
     if (assignments && Array.isArray(assignments)) {
       for (const assignment of assignments) {
-        await Assignment.findOneAndUpdate(
-          { userId, syncId: assignment.id },
-          {
-            userId,
-            title: assignment.title,
-            dueDate: assignment.dueDate,
-            description: assignment.description || "",
-            courseId: assignment.courseId,
-            grade: assignment.grade,
-            completed: assignment.completed || false,
-            syncId: assignment.id,
-          },
-          { upsert: true, new: true }
-        );
+        const existingAssignment = await Assignment.findOne({
+          userId,
+          syncId: assignment.id,
+        });
+
+        if (
+          !existingAssignment ||
+          (assignment._lastModified &&
+            existingAssignment.updatedAt &&
+            new Date(assignment._lastModified) >
+              new Date(existingAssignment.updatedAt))
+        ) {
+          await Assignment.findOneAndUpdate(
+            { userId, syncId: assignment.id },
+            {
+              userId,
+              title: assignment.title,
+              dueDate: assignment.dueDate,
+              description: assignment.description || "",
+              courseId: assignment.courseId,
+              grade: assignment.grade,
+              completed: assignment.completed || false,
+              syncId: assignment.id,
+            },
+            { upsert: true, new: true }
+          );
+        }
       }
     }
 
     if (courses && Array.isArray(courses)) {
       for (const course of courses) {
-        await Course.findOneAndUpdate(
-          { userId, syncId: course.id },
-          {
-            userId,
-            name: course.name,
-            grade: course.grade,
-            gradeHistory: course.gradeHistory || [],
-            syncId: course.id,
-          },
-          { upsert: true, new: true }
-        );
+        const existingCourse = await Course.findOne({
+          userId,
+          syncId: course.id,
+        });
+
+        if (
+          !existingCourse ||
+          (course._lastModified &&
+            existingCourse.updatedAt &&
+            new Date(course._lastModified) > new Date(existingCourse.updatedAt))
+        ) {
+          await Course.findOneAndUpdate(
+            { userId, syncId: course.id },
+            {
+              userId,
+              name: course.name,
+              grade: course.grade,
+              gradeHistory: course.gradeHistory || [],
+              syncId: course.id,
+            },
+            { upsert: true, new: true }
+          );
+        }
       }
     }
 
     if (studySessions && Array.isArray(studySessions)) {
       for (const session of studySessions) {
-        await StudySession.findOneAndUpdate(
-          { userId, syncId: session.id },
-          {
-            userId,
-            courseId: session.courseId,
-            date: session.date,
-            durationMinutes: session.durationMinutes,
-            notes: session.notes || "",
-            syncId: session.id,
-          },
-          { upsert: true, new: true }
-        );
+        const existingSession = await StudySession.findOne({
+          userId,
+          syncId: session.id,
+        });
+
+        if (
+          existingSession ||
+          (session._lastModified &&
+            existingSession.updatedAt &&
+            new Date(session._lastModified) >
+              new Date(existingSession.updatedAt))
+        ) {
+          await StudySession.findOneAndUpdate(
+            { userId, syncId: session.id },
+            {
+              userId,
+              courseId: session.courseId,
+              date: session.date,
+              durationMinutes: session.durationMinutes,
+              notes: session.notes || "",
+              syncId: session.id,
+            },
+            { upsert: true, new: true }
+          );
+        }
       }
     }
 
@@ -398,12 +436,14 @@ app.post("/api/sync", authenticate, async (req, res) => {
           courseId: a.courseId,
           grade: a.grade,
           completed: a.completed,
+          _serverUpdatedAt: a.updatedAt.toISOString(),
         })),
         courses: updatedCourses.map((c) => ({
           id: c.syncId,
           name: c.name,
           grade: c.grade,
           gradeHistory: c.gradeHistory,
+          _serverUpdatedAt: c.updatedAt.toISOString(),
         })),
         studySessions: updatedStudySessions.map((s) => ({
           id: s.syncId,
@@ -411,6 +451,7 @@ app.post("/api/sync", authenticate, async (req, res) => {
           date: s.date,
           durationMinutes: s.durationMinutes,
           notes: s.notes,
+          _serverUpdatedAt: s.updatedAt.toISOString(),
         })),
       },
     });

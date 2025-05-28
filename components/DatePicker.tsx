@@ -19,13 +19,9 @@ export function formatDateToYYYYMMDD(date: Date): string {
 
 export const parseLocalDate = (dateString: string): Date => {
   var offset = 0;
-  // if (dateString.length === 10) {
-  //   offset = 1;
-  // }
 
   const parts = dateString.split("-");
 
-  // remove end bit of parts[2] to 2 characters
   parts[2] = parts[2].slice(0, 2);
 
   const numberParts = parts.map(Number);

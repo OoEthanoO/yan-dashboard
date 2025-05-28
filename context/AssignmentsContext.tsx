@@ -57,7 +57,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const fetchAssignments = async () => {
     try {
       setLoading(true);
-      // First, load local data immediately
       const localData = await SyncService.getLocalData();
       if (localData.assignments && localData.assignments.length > 0) {
         const assignmentsWithNumericGrades = localData.assignments.map(
@@ -70,7 +69,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
         setAssignments(assignmentsWithNumericGrades);
       }
 
-      // Then sync with server in background
       const data = await ApiClient.getAllData();
       if (data?.assignments) {
         const assignmentsWithNumericGrades = data.assignments.map(
@@ -80,16 +78,11 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
           })
         );
 
-        // Update local storage with server data
-
         await AsyncStorage.setItem(
           "assignments",
           JSON.stringify(data.assignments)
         );
 
-        // Update state with server data
-
-        // only setAssignments if the local data is not equal to the server data
         const localAssignments = await SyncService.getLocalData().then(
           (data) => data.assignments || []
         );
@@ -120,7 +113,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchAssignments();
 
-    // Subscribe to data changes from SyncService
     const unsubscribe = SyncService.subscribeToDataChanges(async () => {
       try {
         const localData = await SyncService.getLocalData();
@@ -229,17 +221,14 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             await ApiClient.deleteAssignment(id);
             console.log(`Assignment ${id} deleted successfully`);
 
-            // 5. Update local data again to ensure consistency
             await SyncService.updateLocalData(
               updatedAssignments,
               undefined,
               undefined,
-              false // Don't trigger another sync
+              false
             );
           } catch (error) {
             console.error(`Error deleting assignment ${id} on server:`, error);
-            // Still consider operation complete even if server fails
-            // The deleted_assignments list will handle it in future syncs
           }
         },
       });
@@ -274,7 +263,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             throw new Error("Assignment not found");
           }
 
-          // Update local data immediately
           const localData = await SyncService.getLocalData();
           const updatedAssignments = localData.assignments.map(
             (a: Assignment) => {
@@ -290,7 +278,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
           await SyncService.updateAndSync(updatedAssignments);
 
-          // Update local state
           setAssignments((current) =>
             current.map((a) => {
               if (a.id === id) {
@@ -299,8 +286,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
               return a;
             })
           );
-
-          // Sync with server in background
           const dueDate = assignment?.dueDate;
           if (dueDate) {
             const now = new Date();
@@ -325,7 +310,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Implement similar changes for other methods (toggleAssignmentCompleted, updateAssignment)...
   const toggleAssignmentCompleted = async (id: string) => {
     try {
       setLoading(true);
@@ -335,7 +319,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
         type: "update",
         context: "assignments",
         execute: async () => {
-          // Update local data immediately
           const localData = await SyncService.getLocalData();
           const assignment = localData.assignments.find(
             (a: Assignment) => a.id === id
@@ -356,7 +339,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
             await SyncService.updateAndSync(updatedAssignments);
 
-            // Update local state
             setAssignments((current) =>
               current.map((a) => {
                 if (a.id === id) {
@@ -366,7 +348,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
               })
             );
 
-            // Sync with server in background
             await ApiClient.updateAssignment(id, {
               completed: !assignment.completed,
             });
@@ -392,7 +373,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
         type: "update",
         context: "assignments",
         execute: async () => {
-          // Process grade encryption if needed
           let processedUpdate = { ...updatedData };
           if (updatedData.grade !== undefined) {
             let numericGrade: number | undefined;
@@ -415,14 +395,13 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             };
           }
 
-          // Update local data immediately
           const localData = await SyncService.getLocalData();
           const updatedAssignments = localData.assignments.map(
             (a: Assignment) => {
               if (a.id === id) {
                 return {
                   ...a,
-                  ...updatedData, // Use unencrypted version for local storage
+                  ...updatedData,
                 };
               }
               return a;
@@ -431,7 +410,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
           await SyncService.updateAndSync(updatedAssignments);
 
-          // Sync with server in background
           await ApiClient.updateAssignment(id, processedUpdate);
         },
       });

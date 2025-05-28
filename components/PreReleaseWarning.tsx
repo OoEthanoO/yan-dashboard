@@ -48,19 +48,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   alphaContainer: {
-    backgroundColor: "#7f1d1d", // dark red
+    backgroundColor: "#7f1d1d",
     borderBottomWidth: 2,
-    borderBottomColor: "#ef4444", // lighter red
+    borderBottomColor: "#ef4444",
   },
   betaContainer: {
-    backgroundColor: "#854d0e", // dark amber
+    backgroundColor: "#854d0e",
     borderBottomWidth: 2,
-    borderBottomColor: "#eab308", // yellow
+    borderBottomColor: "#eab308",
   },
   rcContainer: {
-    backgroundColor: "#14532d", // dark green
+    backgroundColor: "#14532d",
     borderBottomWidth: 2,
-    borderBottomColor: "#22c55e", // green
+    borderBottomColor: "#22c55e",
   },
   text: {
     fontWeight: "800",
@@ -69,12 +69,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   alphaText: {
-    color: "#fecaca", // light red
+    color: "#fecaca",
   },
   betaText: {
-    color: "#fef08a", // light yellow
+    color: "#fef08a",
   },
   rcText: {
-    color: "#bbf7d0", // light green
+    color: "#bbf7d0",
   },
 });

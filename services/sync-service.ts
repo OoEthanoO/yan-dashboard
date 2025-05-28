@@ -12,7 +12,7 @@ type SyncLock = {
   isLocked: boolean;
   operation: string | null;
   operationStartTime: number | null;
-  priority: number; // Higher number = higher priority
+  priority: number;
 };
 
 const syncLock: SyncLock = {
@@ -39,7 +39,6 @@ export const SyncService = {
     operation: string,
     priority: number = 1
   ): Promise<boolean> => {
-    // If no lock, acquire immediately
     if (!syncLock.isLocked) {
       syncLock.isLocked = true;
       syncLock.operation = operation;
@@ -51,25 +50,21 @@ export const SyncService = {
       return true;
     }
 
-    // If lock exists but this operation has higher priority, try to interrupt
     if (priority > syncLock.priority) {
       console.log(
         `[SYNC] Attempting to interrupt "${syncLock.operation}" for higher priority "${operation}"`
       );
 
-      // Try to abort existing operation
       if (activeSyncAbortController) {
         activeSyncAbortController.abort();
         activeSyncAbortController = null;
       }
 
-      // Wait for existing operation to clean up (max 2 seconds)
       const waitStart = Date.now();
       while (syncLock.isLocked && Date.now() - waitStart < 2000) {
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
 
-      // If we successfully interrupted, take the lock
       if (!syncLock.isLocked) {
         syncLock.isLocked = true;
         syncLock.operation = operation;
@@ -86,7 +81,6 @@ export const SyncService = {
       );
     }
 
-    // If we can't acquire or interrupt, wait for lock to be released (max 5 seconds)
     console.log(
       `[SYNC] "${operation}" waiting for lock held by "${syncLock.operation}"`
     );
@@ -95,7 +89,6 @@ export const SyncService = {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    // If lock was released, acquire it
     if (!syncLock.isLocked) {
       syncLock.isLocked = true;
       syncLock.operation = operation;
@@ -105,12 +98,10 @@ export const SyncService = {
       return true;
     }
 
-    // Failed to acquire lock
     console.log(`[SYNC] "${operation}" failed to acquire lock after waiting`);
     return false;
   },
 
-  // Release lock for an operation
   releaseLock: (operation: string): boolean => {
     if (syncLock.operation === operation) {
       syncLock.isLocked = false;
@@ -127,7 +118,6 @@ export const SyncService = {
     return false;
   },
 
-  // Force release lock (emergency use only)
   forceReleaseLock: () => {
     const prevOp = syncLock.operation;
     syncLock.isLocked = false;
@@ -143,9 +133,7 @@ export const SyncService = {
   },
 
   subscribeToDataChanges: (listener: DataChangeListener) => {
-    // console.log("SUBSCRIBE TO DATA CHANGES");
     listeners.push(listener);
-    // console.log("Current listeners count:", listeners.length);
     return () => {
       const index = listeners.indexOf(listener);
       if (index !== -1) listeners.splice(index, 1);
@@ -153,20 +141,16 @@ export const SyncService = {
   },
 
   notifyDataChanged: () => {
-    // console.log("NOTIFY DATA CHANGED");
     listeners.forEach((listener) => listener());
   },
 
   getLocalData: async () => {
     try {
-      // console.log("GET LOCAL DATA");
       const [assignmentsStr, coursesStr, studySessionsStr] = await Promise.all([
         AsyncStorage.getItem("assignments"),
         AsyncStorage.getItem("courses"),
         AsyncStorage.getItem("study_sessions"),
       ]);
-
-      // console.log("GOT LOCAL DATA");
 
       return {
         assignments: assignmentsStr ? JSON.parse(assignmentsStr) : [],
@@ -186,7 +170,6 @@ export const SyncService = {
     performSync: boolean = true
   ) => {
     const operation = `updateAndSync-${Date.now()}`;
-    // User operations have higher priority (2) than background syncs (1)
     const lockAcquired = await SyncService.acquireLock(operation, 2);
 
     if (!lockAcquired) {
@@ -199,9 +182,18 @@ export const SyncService = {
     try {
       console.log("UPDATE AND SYNC");
       const updatePromises = [];
+      const now = new Date().toISOString();
 
       if (updatedAssignments) {
-        // Ensure grades are properly formatted
+        const timestampsStr = await AsyncStorage.getItem(
+          "assignments_timestamps"
+        );
+        let timestamps = timestampsStr ? JSON.parse(timestampsStr) : {};
+
+        updatedAssignments.forEach((a) => {
+          timestamps[a.id] = now;
+        });
+
         const processedAssignments = updatedAssignments.map((a) => ({
           ...a,
           grade: a.grade !== undefined ? Number(a.grade) : undefined,
@@ -212,12 +204,22 @@ export const SyncService = {
           AsyncStorage.setItem(
             "assignments",
             JSON.stringify(processedAssignments)
+          ),
+          AsyncStorage.setItem(
+            "assignments_timestamps",
+            JSON.stringify(timestamps)
           )
         );
       }
 
       if (updatedCourses) {
-        // Ensure grades are properly formatted
+        const timestampsStr = await AsyncStorage.getItem("courses_timestamps");
+        let timestamps = timestampsStr ? JSON.parse(timestampsStr) : {};
+
+        updatedCourses.forEach((c) => {
+          timestamps[c.id] = now;
+        });
+
         const processedCourses = updatedCourses.map((c) => ({
           ...c,
           grade: c.grade !== undefined ? Number(c.grade) : undefined,
@@ -230,28 +232,38 @@ export const SyncService = {
         }));
 
         updatePromises.push(
-          AsyncStorage.setItem("courses", JSON.stringify(processedCourses))
+          AsyncStorage.setItem("courses", JSON.stringify(processedCourses)),
+          AsyncStorage.setItem("courses_timestamps", JSON.stringify(timestamps))
         );
       }
 
       if (updatedStudySessions) {
+        const timestampsStr = await AsyncStorage.getItem(
+          "study_sessions_timestamps"
+        );
+        let timestamps = timestampsStr ? JSON.parse(timestampsStr) : {};
+
+        updatedStudySessions.forEach((s) => {
+          timestamps[s.id] = now;
+        });
+
         updatePromises.push(
           AsyncStorage.setItem(
             "study_sessions",
             JSON.stringify(updatedStudySessions)
+          ),
+          AsyncStorage.setItem(
+            "study_sessions_timestamps",
+            JSON.stringify(timestamps)
           )
         );
       }
 
       await Promise.all(updatePromises);
 
-      // Notify listeners that local data has changed
       SyncService.notifyDataChanged();
 
-      // Then perform server sync in the background
-      // We don't await this so the function can return immediately after local update
       if (performSync) {
-        // Don't await this to keep the function responsive
         SyncService.performFullSync(false).catch((error) => {
           console.error("[SYNC] Background sync failed:", error);
         });
@@ -270,26 +282,22 @@ export const SyncService = {
     const operation = `fullSync-${
       isPeriodic ? "periodic" : "manual"
     }-${Date.now()}`;
-    // Periodic syncs have lower priority (1) than user operations (2)
     const priority = isPeriodic ? 1 : 2;
 
-    // Try to acquire lock
     const lockAcquired = await SyncService.acquireLock(operation, priority);
     if (!lockAcquired) {
       console.log(
         `[SYNC] Skipping sync "${operation}" - couldn't acquire lock`
       );
-      return null; // Skip sync if lock can't be acquired
+      return null;
     }
 
-    // Create abort controller for this sync
     activeSyncAbortController = new AbortController();
     const signal = activeSyncAbortController.signal;
 
     try {
       console.log(`[SYNC] Starting full sync (periodic: ${isPeriodic})`);
 
-      // Check if operation was aborted
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted before starting`);
         throw new Error("Sync aborted");
@@ -301,7 +309,6 @@ export const SyncService = {
         AsyncStorage.getItem("study_sessions"),
       ]);
 
-      // Check if operation was aborted
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted after loading local data`);
         throw new Error("Sync aborted");
@@ -320,7 +327,6 @@ export const SyncService = {
         courses
       );
 
-      // Check if operation was aborted
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted after processing data`);
         throw new Error("Sync aborted");
@@ -332,7 +338,6 @@ export const SyncService = {
         studySessions
       );
 
-      // Check if operation was aborted
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted after API call`);
         throw new Error("Sync aborted");
@@ -345,7 +350,6 @@ export const SyncService = {
       if (response?.assignments?.length > 0) {
         let processedAssignments = response.assignments;
 
-        // Format grades as numbers
         processedAssignments = processedAssignments.map((a: Assignment) => ({
           ...a,
           grade: a.grade !== undefined ? Number(a.grade) : undefined,
@@ -363,7 +367,6 @@ export const SyncService = {
       if (response?.courses?.length > 0) {
         let processedCourses = response.courses;
 
-        // Format grades as numbers
         processedCourses = processedCourses.map((c: Course) => ({
           ...c,
           grade: c.grade !== undefined ? Number(c.grade) : undefined,
@@ -389,7 +392,6 @@ export const SyncService = {
         );
       }
 
-      // Check if operation was aborted before final storage update
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted before storage update`);
         throw new Error("Sync aborted");
@@ -448,11 +450,9 @@ export const SyncService = {
       console.log("[SYNC] REFRESH ALL DATA");
       const data = await ApiClient.getAllData();
 
-      // Ensure data is properly decrypted before storage
       let assignments = data?.assignments || [];
       let courses = data?.courses || [];
 
-      // Decrypt data if needed
       if (assignments.some((a: Assignment) => a.isGradeEncrypted)) {
         assignments = await EncryptionService.decryptAssignments(assignments);
       }
@@ -469,7 +469,6 @@ export const SyncService = {
       const storageUpdates = [];
 
       if (assignments.length > 0) {
-        // Format the now-decrypted data for storage
         const processedAssignments = assignments.map((a: Assignment) => ({
           ...a,
           grade: a.grade !== undefined ? Number(a.grade) : undefined,
@@ -485,7 +484,6 @@ export const SyncService = {
       }
 
       if (courses.length > 0) {
-        // Format the now-decrypted data for storage
         const processedCourses = courses.map((c: Course) => ({
           ...c,
           grade: c.grade !== undefined ? Number(c.grade) : undefined,
@@ -543,7 +541,6 @@ export const SyncService = {
       const updatePromises = [];
 
       if (assignments) {
-        // Format assignments for storage
         const processedAssignments = assignments.map((a) => ({
           ...a,
           grade: a.grade !== undefined ? Number(a.grade) : undefined,
@@ -559,7 +556,6 @@ export const SyncService = {
       }
 
       if (courses) {
-        // Similar processing for courses
         updatePromises.push(
           AsyncStorage.setItem("courses", JSON.stringify(courses))
         );
@@ -573,12 +569,9 @@ export const SyncService = {
 
       await Promise.all(updatePromises);
 
-      // Notify listeners that data has changed
       SyncService.notifyDataChanged();
 
-      // Optionally trigger a sync with the server
       if (triggerSync) {
-        // Don't await this to keep function responsive
         SyncService.performFullSync().catch(console.error);
       }
 

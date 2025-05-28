@@ -11,7 +11,6 @@ import { StudySessionsProvider } from "../context/StudySessionsContext";
 function AppContent() {
   const { user, loading } = useAuth();
 
-  // Return warning first with appropriate content
   return (
     <>
       <PreReleaseWarning />

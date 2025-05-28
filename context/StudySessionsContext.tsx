@@ -48,16 +48,13 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // First load local data immediately
       const localData = await SyncService.getLocalData();
       if (localData.studySessions && localData.studySessions.length > 0) {
         setSessions(localData.studySessions);
       }
 
-      // Then sync with server in background
       const data = await ApiClient.getAllData();
       if (data?.studySessions) {
-        // Update local storage
         await AsyncStorage.setItem(
           "study_sessions",
           JSON.stringify(data.studySessions)
@@ -75,8 +72,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
           console.log("Updating local study sessions from server data.");
           setSessions(data.studySessions);
         }
-
-        // Update state
       }
     } catch (error) {
       console.error("Failed to fetch study sessions:", error);
@@ -88,7 +83,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchSessions();
 
-    // Subscribe to data changes from SyncService
     const unsubscribe = SyncService.subscribeToDataChanges(async () => {
       try {
         const localData = await SyncService.getLocalData();
@@ -116,7 +110,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
         type: "add",
         context: "study-sessions",
         execute: async () => {
-          // Create temp ID for local storage
           const tempId = `${Date.now()}_${Math.random()
             .toString(36)
             .substring(2, 9)}`;
@@ -125,7 +118,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
             id: tempId,
           };
 
-          // Update local data immediately
           const localData = await SyncService.getLocalData();
           const updatedSessions = [...localData.studySessions, newSession];
           await SyncService.updateAndSync(
@@ -134,9 +126,7 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
             updatedSessions
           );
 
-          // Sync with server in background
-          // await ApiClient.createStudySession(session);
-          await fetchSessions(); // This will replace temp IDs with server IDs
+          await fetchSessions();
         },
       });
     } catch (error) {
@@ -155,7 +145,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
         type: "remove",
         context: "study-sessions",
         execute: async () => {
-          // Update local data immediately
           const localData = await SyncService.getLocalData();
           const updatedSessions = localData.studySessions.filter(
             (s: StudySession) => s.id !== id
@@ -166,7 +155,6 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
             updatedSessions
           );
 
-          // Sync with server in background
           await ApiClient.deleteStudySession(id);
         },
       });

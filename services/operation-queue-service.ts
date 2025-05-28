@@ -50,22 +50,18 @@ class OperationQueueService {
         );
 
         try {
-          // Execute the operation
           await operation.execute();
           console.log(
             `Operation completed: ${operation.type} in ${operation.context} (ID: ${operation.id})`
           );
         } catch (error: any) {
-          // If operation failed due to lock issues, requeue it
           if (error.message?.includes("Could not acquire sync lock")) {
             console.log(
               `Operation retry scheduled: ${operation.type} in ${operation.context} (ID: ${operation.id})`
             );
 
-            // Wait briefly before retrying
             await new Promise((resolve) => setTimeout(resolve, 500));
 
-            // Move to back of queue instead of removing
             const failedOp = this.queue.shift();
             if (failedOp) {
               this.queue.push(failedOp);
@@ -78,7 +74,6 @@ class OperationQueueService {
             );
           }
         } finally {
-          // Remove the processed operation unless it was requeued
           if (this.queue[0]?.id === operation.id) {
             this.queue.shift();
           }
