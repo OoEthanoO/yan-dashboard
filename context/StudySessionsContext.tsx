@@ -62,8 +62,20 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
           JSON.stringify(data.studySessions)
         );
 
+        const localSessions = await SyncService.getLocalData().then(
+          (data) => data.studySessions || []
+        );
+
+        if (
+          JSON.stringify(localSessions) === JSON.stringify(data.studySessions)
+        ) {
+          console.log("Local study sessions are already up-to-date.");
+        } else {
+          console.log("Updating local study sessions from server data.");
+          setSessions(data.studySessions);
+        }
+
         // Update state
-        setSessions(data.studySessions);
       }
     } catch (error) {
       console.error("Failed to fetch study sessions:", error);
@@ -99,7 +111,7 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
       setLoading(true);
 
       // Create temp ID for local storage
-      const tempId = `temp_${Date.now()}_${Math.random()
+      const tempId = `${Date.now()}_${Math.random()
         .toString(36)
         .substring(2, 9)}`;
       const newSession = {
@@ -113,7 +125,7 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
       await SyncService.updateAndSync(undefined, undefined, updatedSessions);
 
       // Sync with server in background
-      await ApiClient.createStudySession(session);
+      // await ApiClient.createStudySession(session);
       await fetchSessions(); // This will replace temp IDs with server IDs
     } catch (error) {
       console.error("Failed to add study session:", error);

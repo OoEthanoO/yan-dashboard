@@ -68,7 +68,6 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
           gradeHistory: c.gradeHistory?.map((point) => ({
             ...point,
             grade: Number(point.grade),
-            isEncrypted: false,
           })),
         }));
         setCourses(coursesWithNumericGrades);
@@ -80,11 +79,9 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         const coursesWithNumericGrades = data.courses.map((c: Course) => ({
           ...c,
           grade: c.grade !== undefined ? Number(c.grade) : undefined,
-          isGradeEncrypted: false,
           gradeHistory: c.gradeHistory?.map((point) => ({
             ...point,
             grade: Number(point.grade),
-            isEncrypted: false,
           })),
         }));
 
@@ -92,7 +89,25 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
         await AsyncStorage.setItem("courses", JSON.stringify(data.courses));
 
         // Update state
-        setCourses(coursesWithNumericGrades);
+
+        const localCourses = await SyncService.getLocalData().then(
+          (data) => data.courses || []
+        );
+
+        if (
+          JSON.stringify(localCourses) ===
+          JSON.stringify(coursesWithNumericGrades)
+        ) {
+          console.log("Local courses are already up-to-date.");
+        } else {
+          console.log("Updating local courses with server data.");
+          console.log("Local courses:", JSON.stringify(localCourses));
+          console.log(
+            "Courses from server:",
+            JSON.stringify(coursesWithNumericGrades)
+          );
+          setCourses(coursesWithNumericGrades);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch courses:", error);
@@ -173,7 +188,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       await SyncService.updateAndSync(undefined, updatedCourses);
 
       // Sync with server in background
-      await ApiClient.createCourse(dataToSend);
+      // await ApiClient.createCourse(dataToSend);
       await fetchCourses(); // This will replace temp IDs with server IDs
     } catch (error) {
       console.error("Failed to add course:", error);

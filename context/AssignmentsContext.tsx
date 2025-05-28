@@ -77,18 +77,38 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
           (a: Assignment) => ({
             ...a,
             grade: a.grade !== undefined ? Number(a.grade) : undefined,
-            isGradeEncrypted: false,
           })
         );
 
         // Update local storage with server data
+
         await AsyncStorage.setItem(
           "assignments",
           JSON.stringify(data.assignments)
         );
 
         // Update state with server data
-        setAssignments(assignmentsWithNumericGrades);
+
+        // only setAssignments if the local data is not equal to the server data
+        const localAssignments = await SyncService.getLocalData().then(
+          (data) => data.assignments || []
+        );
+
+        const localIsEqualToServer =
+          JSON.stringify(localAssignments) ===
+          JSON.stringify(assignmentsWithNumericGrades);
+
+        if (localIsEqualToServer) {
+          console.log("Local assignments are up-to-date with server data.");
+        } else {
+          console.log("Local assignments: ", JSON.stringify(localAssignments));
+          console.log(
+            "Server assignments: ",
+            JSON.stringify(assignmentsWithNumericGrades)
+          );
+          console.log("Updating assignments from server data.");
+          setAssignments(assignmentsWithNumericGrades);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch assignments:", error);
@@ -160,7 +180,7 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
       await SyncService.updateAndSync(updatedAssignments);
 
       // Sync with server in background
-      await ApiClient.createAssignment(processedAssignment);
+      // await ApiClient.createAssignment(processedAssignment);
       await fetchAssignments(); // This will replace temp IDs with server IDs
     } catch (error) {
       console.error("Failed to add assignment:", error);
@@ -182,7 +202,10 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
       // Sync with server in background
       await ApiClient.deleteAssignment(id);
+      console.log(`Assignment ${id} deleted successfully`);
       // No need to call fetchAssignments as the local change is already reflected
+
+      fetchAssignments();
     } catch (error) {
       console.error("Failed to delete assignment:", error);
     } finally {

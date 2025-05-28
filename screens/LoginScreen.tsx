@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -54,19 +55,87 @@ export default function LoginScreen() {
   async function handleSubmit() {
     setError(null);
 
+    // Validate inputs
     if (!email || !password || (!isLogin && !name)) {
       setError("All fields are required");
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address");
+      return;
+    }
+
+    // Password validation
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long");
       return;
     }
 
     try {
       if (isLogin) {
         await login(email, password);
+        // If we reach here, login was successful, error will be cleared by successful navigation
       } else {
+        // Name validation for registration
+        if (name.trim().length < 2) {
+          setError("Name must be at least 2 characters long");
+          return;
+        }
         await register(email, password, name);
       }
     } catch (err: any) {
-      setError(err instanceof Error ? err.message : "Authentication failed");
+      console.error("Authentication error:", err);
+
+      // Handle specific error messages
+      let errorMessage = "Authentication failed";
+
+      if (err instanceof Error) {
+        // Check for specific error messages from the server
+        if (
+          err.message.includes("Invalid credentials") ||
+          err.message.includes("Invalid email or password") ||
+          err.message.includes("Unauthorized")
+        ) {
+          console.log("Invalid credentials error detected");
+          errorMessage = isLogin
+            ? "Invalid email or password. Please check your credentials and try again."
+            : "Registration failed. Please try again.";
+        } else if (err.message.includes("Email already in use")) {
+          errorMessage =
+            "An account with this email already exists. Please sign in instead.";
+        } else if (err.message.includes("User not found")) {
+          errorMessage = "No account found with this email address.";
+        } else if (
+          err.message.includes("Network") ||
+          err.message.includes("fetch")
+        ) {
+          errorMessage =
+            "Network error. Please check your connection and try again.";
+        } else if (
+          err.message.includes("Server error") ||
+          err.message.includes("500")
+        ) {
+          errorMessage = "Server error. Please try again later.";
+        } else {
+          errorMessage = err.message || "Authentication failed";
+        }
+      }
+
+      // Set error and ensure it stays visible
+      setError(errorMessage);
+      console.log("Error message set:", errorMessage);
+
+      // Use setTimeout to ensure error persists and show alert as backup
+      // setTimeout(() => {
+      //   if (errorMessage.includes("Invalid email or password")) {
+      //     Alert.alert("Login Failed", errorMessage, [
+      //       { text: "OK", style: "default" },
+      //     ]);
+      //   }
+      // }, 100);
     }
   }
 
@@ -88,9 +157,31 @@ export default function LoginScreen() {
           </Text>
 
           {error && (
-            <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle" size={18} color="#ef4444" />
-              <Text style={styles.error}>{error}</Text>
+            <View
+              style={[
+                styles.errorContainer,
+                error.includes("Invalid email or password") &&
+                  styles.criticalErrorContainer,
+              ]}
+            >
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color={
+                  error.includes("Invalid email or password")
+                    ? "#dc2626"
+                    : "#ef4444"
+                }
+              />
+              <Text
+                style={[
+                  styles.error,
+                  error.includes("Invalid email or password") &&
+                    styles.criticalError,
+                ]}
+              >
+                {error}
+              </Text>
             </View>
           )}
 
@@ -99,7 +190,10 @@ export default function LoginScreen() {
               style={styles.input}
               placeholder="Full Name"
               value={name}
-              onChangeText={setName}
+              onChangeText={(text) => {
+                setName(text);
+                if (error) setError(null); // Clear error when user starts typing
+              }}
               autoCapitalize="words"
               placeholderTextColor="#aaa"
             />
@@ -109,7 +203,10 @@ export default function LoginScreen() {
             style={styles.input}
             placeholder="Email"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(text) => {
+              setEmail(text);
+              if (error) setError(null); // Clear error when user starts typing
+            }}
             keyboardType="email-address"
             autoCapitalize="none"
             placeholderTextColor="#aaa"
@@ -119,13 +216,16 @@ export default function LoginScreen() {
             style={styles.input}
             placeholder="Password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (error) setError(null); // Clear error when user starts typing
+            }}
             secureTextEntry
             placeholderTextColor="#aaa"
           />
 
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleSubmit}
             disabled={loading}
           >
@@ -140,7 +240,10 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={styles.switchButton}
-            onPress={() => setIsLogin(!isLogin)}
+            onPress={() => {
+              setIsLogin(!isLogin);
+              setError(null); // Clear error when switching modes
+            }}
           >
             <Text style={styles.switchButtonText}>
               {isLogin
@@ -220,20 +323,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: "center",
   },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fef2f2",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  error: {
-    color: "#ef4444",
-    marginLeft: 6,
-    fontSize: 14,
-  },
   input: {
     backgroundColor: "#f1f5f9",
     borderRadius: 8,
@@ -281,5 +370,38 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 12,
     color: "#9ca3af",
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#fecaca",
+  },
+  criticalErrorContainer: {
+    backgroundColor: "#fef1f1",
+    borderColor: "#f87171",
+    shadowColor: "#dc2626",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  error: {
+    color: "#ef4444",
+    marginLeft: 6,
+    fontSize: 14,
+    flex: 1,
+  },
+  criticalError: {
+    color: "#dc2626",
+    fontWeight: "500",
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
 });

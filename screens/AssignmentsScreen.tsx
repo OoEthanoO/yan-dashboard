@@ -1358,7 +1358,7 @@ export default function AssignmentsScreen() {
                       {formatDate(session.date)}
                     </Text>
                   </View>
-                  {session.notes && (
+                  {session.notes !== "" && (
                     <Text style={styles.sessionCardNotes}>{session.notes}</Text>
                   )}
                 </View>
