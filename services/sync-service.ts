@@ -24,6 +24,8 @@ const syncLock: SyncLock = {
 
 let activeSyncAbortController: AbortController | null = null;
 
+const globalLastModified = new Date().toISOString();
+
 export const SyncService = {
   isSyncInProgress: () => syncLock.isLocked,
 
@@ -335,7 +337,8 @@ export const SyncService = {
       const response = await ApiClient.syncData(
         processedAssignments,
         processedCourses,
-        studySessions
+        studySessions,
+        globalLastModified // Add this parameter
       );
 
       if (signal.aborted) {

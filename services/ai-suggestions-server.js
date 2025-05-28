@@ -301,10 +301,15 @@ app.post("/api/sync", authenticate, async (req, res) => {
       studySessions,
       lastSyncTime,
       deletedAssignmentIds,
+      globalLastModified,
     } = req.body;
     const userId = req.user._id;
     const clientLastSync = new Date(lastSyncTime || 0);
     const serverLastSync = req.user.lastSync;
+
+    const clientDataIsNewer =
+      globalLastModified &&
+      new Date(globalLastModified) > new Date(serverLastSync);
 
     if (
       deletedAssignmentIds &&
@@ -316,20 +321,11 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    if (assignments && Array.isArray(assignments)) {
-      for (const assignment of assignments) {
-        const existingAssignment = await Assignment.findOne({
-          userId,
-          syncId: assignment.id,
-        });
+    if (clientDataIsNewer) {
+      console.log("[SYNC] Client data is newer, updating server data");
 
-        if (
-          !existingAssignment ||
-          (assignment._lastModified &&
-            existingAssignment.updatedAt &&
-            new Date(assignment._lastModified) >
-              new Date(existingAssignment.updatedAt))
-        ) {
+      if (assignments && Array.isArray(assignments)) {
+        for (const assignment of assignments) {
           await Assignment.findOneAndUpdate(
             { userId, syncId: assignment.id },
             {
@@ -346,21 +342,9 @@ app.post("/api/sync", authenticate, async (req, res) => {
           );
         }
       }
-    }
 
-    if (courses && Array.isArray(courses)) {
-      for (const course of courses) {
-        const existingCourse = await Course.findOne({
-          userId,
-          syncId: course.id,
-        });
-
-        if (
-          !existingCourse ||
-          (course._lastModified &&
-            existingCourse.updatedAt &&
-            new Date(course._lastModified) > new Date(existingCourse.updatedAt))
-        ) {
+      if (courses && Array.isArray(courses)) {
+        for (const course of courses) {
           await Course.findOneAndUpdate(
             { userId, syncId: course.id },
             {
@@ -374,22 +358,9 @@ app.post("/api/sync", authenticate, async (req, res) => {
           );
         }
       }
-    }
 
-    if (studySessions && Array.isArray(studySessions)) {
-      for (const session of studySessions) {
-        const existingSession = await StudySession.findOne({
-          userId,
-          syncId: session.id,
-        });
-
-        if (
-          existingSession ||
-          (session._lastModified &&
-            existingSession.updatedAt &&
-            new Date(session._lastModified) >
-              new Date(existingSession.updatedAt))
-        ) {
+      if (studySessions && Array.isArray(studySessions)) {
+        for (const session of studySessions) {
           await StudySession.findOneAndUpdate(
             { userId, syncId: session.id },
             {
@@ -404,21 +375,20 @@ app.post("/api/sync", authenticate, async (req, res) => {
           );
         }
       }
+    } else {
+      console.log("[SYNC] Server data is newer, skipping client updates");
     }
 
     const updatedAssignments = await Assignment.find({
       userId,
-      updatedAt: { $gt: clientLastSync },
     });
 
     const updatedCourses = await Course.find({
       userId,
-      updatedAt: { $gt: clientLastSync },
     });
 
     const updatedStudySessions = await StudySession.find({
       userId,
-      updatedAt: { $gt: clientLastSync },
     });
 
     req.user.lastSync = new Date();

@@ -128,7 +128,12 @@ export class ApiClient {
     return await this.request("/auth/me");
   }
 
-  static async syncData(assignments, courses, studySessions) {
+  static async syncData(
+    assignments,
+    courses,
+    studySessions,
+    globalLastModified
+  ) {
     const lastSyncTime = (await this.getLastSyncTime()) || new Date(0);
 
     const timestampedData = {
@@ -167,6 +172,7 @@ export class ApiClient {
       studySessions: timestampedData.studySessions,
       deletedAssignmentIds,
       lastSyncTime,
+      globalLastModified,
     });
 
     await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
