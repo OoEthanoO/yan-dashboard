@@ -38,6 +38,7 @@ type AuthContextType = {
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const LOCAL_LAST_UPDATE_KEY = "local_last_update";
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isSyncingRef = useRef(false);
 
-  const SYNC_INTERVAL = 5 * 60 * 1000;
+  const SYNC_INTERVAL = 30 * 1000;
 
   useEffect(() => {
     if (Platform.OS === "web") {
@@ -120,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current);
       }
-      syncIntervalRef.current = setInterval(performPeriodicSync, 60 * 1000);
+      syncIntervalRef.current = setInterval(performPeriodicSync, 10 * 1000);
     } finally {
       isSyncingRef.current = false;
       setIsSyncing(false);
@@ -150,6 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (token) {
           const data = await ApiClient.getMe();
           setUser(data.user);
+        } else {
+          await clearLocalData();
         }
       } catch (error) {
         console.error("Auth check failed:", error);
@@ -161,6 +164,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     checkAuth();
   }, []);
+
+  async function clearLocalData() {
+    try {
+      await Promise.all([
+        AsyncStorage.removeItem("assignments"),
+        AsyncStorage.removeItem("courses"),
+        AsyncStorage.removeItem("study_sessions"),
+        AsyncStorage.removeItem("password_hash"),
+        AsyncStorage.removeItem("user_encryption_key"),
+        AsyncStorage.removeItem("deleted_assignments"),
+        AsyncStorage.removeItem("aiSuggestions"),
+        AsyncStorage.removeItem("lastSyncTime"),
+        AsyncStorage.removeItem(LOCAL_LAST_UPDATE_KEY), // Also clear the sync time
+      ]);
+      console.log("Local data cleared due to invalid authentication");
+    } catch (error) {
+      console.error("Failed to clear local data:", error);
+    }
+  }
 
   useEffect(() => {
     if (user && !loading) {
@@ -221,17 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       await ApiClient.logout();
       setUser(null);
-
-      await Promise.all([
-        AsyncStorage.removeItem("assignments"),
-        AsyncStorage.removeItem("courses"),
-        AsyncStorage.removeItem("study_sessions"),
-        AsyncStorage.removeItem("password_hash"),
-        AsyncStorage.removeItem("user_encryption_key"),
-        AsyncStorage.removeItem("deleted_assignments"),
-        AsyncStorage.removeItem("aiSuggestions"),
-        AsyncStorage.removeItem("lastSyncTime"),
-      ]);
+      await clearLocalData();
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
