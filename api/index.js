@@ -52,6 +52,7 @@ const UserSchema = new mongoose.Schema(
     encryptionKey: { type: String },
     createdAt: { type: Date, default: Date.now },
     lastSync: { type: Date, default: Date.now },
+    lastUpdateTime: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
@@ -331,9 +332,9 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    console.log("[SYNC] Client data is newer, updating server data");
-
     if (clientDataIsNewer) {
+      console.log("[SYNC] Client data is newer, updating server data");
+
       if (assignments && Array.isArray(assignments)) {
         for (const assignment of assignments) {
           await Assignment.findOneAndUpdate(
@@ -389,13 +390,20 @@ app.post("/api/sync", authenticate, async (req, res) => {
       console.log("[SYNC] Server data is newer, sending server data to client");
     }
 
-    req.user.lastSync = new Date();
+    if (clientDataIsNewer || !req.user.lastUpdateTime) {
+      req.user.lastSync = new Date();
+    }
+
     await req.user.save();
+
+    console.log("[SYNC] req.user.lastUpdateTime", req.user.lastUpdateTime);
 
     res.json({
       success: true,
       lastSync: req.user.lastSync,
-      serverLastUpdateTime: req.user.lastUpdateTime.toISOString(),
+      serverLastUpdateTime: req.user.lastUpdateTime
+        ? req.user.lastUpdateTime.toISOString()
+        : new Date().toISOString(),
       data: {
         assignments: (await Assignment.find({ userId })).map((a) => ({
           id: a.syncId,

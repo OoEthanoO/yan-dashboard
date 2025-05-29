@@ -6,6 +6,7 @@ const PROD_API_URL = "https://yan-dashboard.onrender.com/api";
 const DEV_API_URL = "http://localhost:4000/api";
 const AUTH_TOKEN_KEY = "auth_token";
 const LAST_SYNC_KEY = "last_sync_time";
+const LOCAL_LAST_UPDATE_KEY = "local_last_update_time";
 
 export class ApiClient {
   static async isDebugMode() {

@@ -71,21 +71,6 @@ export default function PrivacyScreen() {
 
         <View style={styles.section}>
           <Ionicons
-            name="analytics"
-            size={32}
-            color="#3b82f6"
-            style={styles.sectionIcon}
-          />
-          <Text style={styles.sectionTitle}>AI Processing</Text>
-          <Text style={styles.sectionText}>
-            When providing personalized suggestions, your data is temporarily
-            decrypted in a secure environment accessible only to our AI system.
-            The AI does not store your data after processing.
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <Ionicons
             name="code-slash"
             size={32}
             color="#3b82f6"
