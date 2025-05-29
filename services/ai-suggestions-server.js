@@ -301,15 +301,25 @@ app.post("/api/sync", authenticate, async (req, res) => {
       studySessions,
       lastSyncTime,
       deletedAssignmentIds,
-      globalLastModified,
+      localLastUpdateTime,
     } = req.body;
     const userId = req.user._id;
-    const clientLastSync = new Date(lastSyncTime || 0);
-    const serverLastSync = req.user.lastSync;
 
-    const clientDataIsNewer =
-      globalLastModified &&
-      new Date(globalLastModified) > new Date(serverLastSync);
+    const serverLastUpdateTime = req.user.lastUpdateTime
+      ? new Date(req.user.lastUpdateTime)
+      : new Date(0);
+
+    const clientLastUpdateTime = localLastUpdateTime
+      ? new Date(localLastUpdateTime)
+      : new Date(0);
+
+    const clientDataIsNewer = clientLastUpdateTime > serverLastUpdateTime;
+
+    console.log(`[SYNC] Client last update: ${clientLastUpdateTime}`);
+    console.log(`[SYNC] Server last update: ${serverLastUpdateTime}`);
+    console.log(
+      `[SYNC] Client data is ${clientDataIsNewer ? "newer" : "older"}`
+    );
 
     if (
       deletedAssignmentIds &&
@@ -321,9 +331,9 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    if (clientDataIsNewer) {
-      console.log("[SYNC] Client data is newer, updating server data");
+    console.log("[SYNC] Client data is newer, updating server data");
 
+    if (clientDataIsNewer) {
       if (assignments && Array.isArray(assignments)) {
         for (const assignment of assignments) {
           await Assignment.findOneAndUpdate(
@@ -376,20 +386,8 @@ app.post("/api/sync", authenticate, async (req, res) => {
         }
       }
     } else {
-      console.log("[SYNC] Server data is newer, skipping client updates");
+      console.log("[SYNC] Server data is newer, sending server data to client");
     }
-
-    const updatedAssignments = await Assignment.find({
-      userId,
-    });
-
-    const updatedCourses = await Course.find({
-      userId,
-    });
-
-    const updatedStudySessions = await StudySession.find({
-      userId,
-    });
 
     req.user.lastSync = new Date();
     await req.user.save();
@@ -397,8 +395,9 @@ app.post("/api/sync", authenticate, async (req, res) => {
     res.json({
       success: true,
       lastSync: req.user.lastSync,
+      serverLastUpdateTime: req.user.lastUpdateTime.toISOString(),
       data: {
-        assignments: updatedAssignments.map((a) => ({
+        assignments: (await Assignment.find({ userId })).map((a) => ({
           id: a.syncId,
           title: a.title,
           dueDate: a.dueDate,
@@ -408,14 +407,14 @@ app.post("/api/sync", authenticate, async (req, res) => {
           completed: a.completed,
           _serverUpdatedAt: a.updatedAt.toISOString(),
         })),
-        courses: updatedCourses.map((c) => ({
+        courses: (await Course.find({ userId })).map((c) => ({
           id: c.syncId,
           name: c.name,
           grade: c.grade,
           gradeHistory: c.gradeHistory,
           _serverUpdatedAt: c.updatedAt.toISOString(),
         })),
-        studySessions: updatedStudySessions.map((s) => ({
+        studySessions: (await StudySession.find({ userId })).map((s) => ({
           id: s.syncId,
           courseId: s.courseId,
           date: s.date,

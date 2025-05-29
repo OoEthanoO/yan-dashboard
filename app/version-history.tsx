@@ -60,64 +60,6 @@ const testEnvironments = [
   },
 ];
 
-// const versionHistory = [
-// {
-// version: "0.2.0-alpha.2",
-// date: "2025-05-25",
-// type: "alpha",
-// changes: [
-// "Resolve bug 683357e0fe6ceb0e81f67e6a: Grade points added through grade history are off by one day",
-// ],
-// },
-// {
-// version: "0.2.0-alpha.1",
-// date: "2025-05-25",
-// type: "alpha",
-// changes: ["Add prerelease warning for non-production environments"],
-// },
-// {
-// version: "0.1.1",
-// date: "2025-05-25",
-// type: "production",
-// changes: ["Hotfix", "Correct testing environment URLs"],
-// },
-// {
-// version: "0.1.0",
-// date: "2025-05-25",
-// type: "initial",
-// changes: [
-// "Initial release of Yan Dashboard",
-// "Student assignment tracking",
-// "Course management",
-// "Study session logging",
-// "Grade tracking with encryption",
-// "Basic AI productivity suggestions",
-// ],
-// },
-// {
-// version: "0.1.0-beta.1",
-// date: "2025-05-22",
-// type: "beta",
-// changes: [
-// "Beta testing release",
-// "Fixed critical sync issues",
-// "Implemented end-to-end encryption",
-// "Added course grade history tracking",
-// ],
-// },
-// {
-// version: "0.1.0-alpha.1",
-// date: "2025-05-17",
-// type: "alpha",
-// changes: [
-// "Alpha testing release",
-// "Basic user authentication",
-// "Initial database structure",
-// "Prototype UI implementation",
-// ],
-// },
-// ];
-
 export default function VersionHistoryScreen() {
   const router = useRouter();
   const currentVersion = APP_VERSION;
@@ -155,7 +97,6 @@ export default function VersionHistoryScreen() {
           if (currentVersionEntry) {
             setCurrentVersionType(currentVersionEntry.type);
           } else {
-            // If current version not found in history, try to infer from version string
             if (currentVersion.includes("alpha"))
               setCurrentVersionType("alpha");
             else if (currentVersion.includes("beta"))
@@ -192,13 +133,10 @@ export default function VersionHistoryScreen() {
     const isCurrent = isCurrentEnvironment(envType);
 
     if (isLatest && isCurrent) {
-      // Both latest and current - green takes priority
       return styles.activeEnvironmentCard;
     } else if (isLatest) {
-      // Only latest - green
       return styles.activeEnvironmentCard;
     } else if (isCurrent) {
-      // Only current - blue
       return styles.currentEnvironmentCard;
     }
     return {};

@@ -132,7 +132,7 @@ export class ApiClient {
     assignments,
     courses,
     studySessions,
-    globalLastModified
+    localLastUpdateTime
   ) {
     const lastSyncTime = (await this.getLastSyncTime()) || new Date(0);
 
@@ -172,11 +172,18 @@ export class ApiClient {
       studySessions: timestampedData.studySessions,
       deletedAssignmentIds,
       lastSyncTime,
-      globalLastModified,
+      localLastUpdateTime,
     });
 
     await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
     await this.setLastSyncTime(response.lastSync);
+
+    if (response.serverLastUpdateTime) {
+      await AsyncStorage.setItem(
+        LOCAL_LAST_UPDATE_KEY,
+        response.serverLastUpdateTime
+      );
+    }
 
     if (response.data?.assignments?.length) {
       response.data.assignments = await EncryptionService.decryptAssignments(
@@ -190,7 +197,10 @@ export class ApiClient {
       );
     }
 
-    return response.data;
+    return {
+      ...response.data,
+      serverLastUpdateTime: response.serverLastUpdateTime,
+    };
   }
 
   static async prepareItemsWithTimestamps(items, storageKey) {

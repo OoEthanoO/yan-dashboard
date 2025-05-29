@@ -24,7 +24,20 @@ const syncLock: SyncLock = {
 
 let activeSyncAbortController: AbortController | null = null;
 
-const globalLastModified = new Date().toISOString();
+const LOCAL_LAST_UPDATE_KEY = "local_last_update_time";
+
+const updateLocalLastUpdateTime = async () => {
+  const now = new Date().toISOString();
+  await AsyncStorage.setItem(LOCAL_LAST_UPDATE_KEY, now);
+  return now;
+};
+
+const getLocalLastUpdateTime = async () => {
+  return (
+    (await AsyncStorage.getItem(LOCAL_LAST_UPDATE_KEY)) ||
+    new Date(0).toISOString()
+  );
+};
 
 export const SyncService = {
   isSyncInProgress: () => syncLock.isLocked,
@@ -184,7 +197,7 @@ export const SyncService = {
     try {
       console.log("UPDATE AND SYNC");
       const updatePromises = [];
-      const now = new Date().toISOString();
+      const now = await updateLocalLastUpdateTime();
 
       if (updatedAssignments) {
         const timestampsStr = await AsyncStorage.getItem(
@@ -300,6 +313,8 @@ export const SyncService = {
     try {
       console.log(`[SYNC] Starting full sync (periodic: ${isPeriodic})`);
 
+      const localLastUpdateTime = await getLocalLastUpdateTime();
+
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted before starting`);
         throw new Error("Sync aborted");
@@ -338,12 +353,19 @@ export const SyncService = {
         processedAssignments,
         processedCourses,
         studySessions,
-        globalLastModified // Add this parameter
+        localLastUpdateTime
       );
 
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted after API call`);
         throw new Error("Sync aborted");
+      }
+
+      if (response?.serverLastUpdateTime) {
+        await AsyncStorage.setItem(
+          LOCAL_LAST_UPDATE_KEY,
+          response.serverLastUpdateTime
+        );
       }
 
       await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
