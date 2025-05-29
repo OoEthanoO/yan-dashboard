@@ -124,6 +124,12 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
               isGradeEncrypted: false,
             })
           );
+
+          console.log(
+            "assignmentsWithNumericGrades",
+            assignmentsWithNumericGrades
+          );
+
           setAssignments(assignmentsWithNumericGrades);
         }
       } catch (error) {

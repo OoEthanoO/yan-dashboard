@@ -372,50 +372,54 @@ export const SyncService = {
 
       const storageUpdates = [];
 
-      if (response?.assignments?.length > 0) {
-        let processedAssignments = response.assignments;
+      let processedResponseAssignments = response.assignments;
 
-        processedAssignments = processedAssignments.map((a: Assignment) => ({
+      processedResponseAssignments = processedResponseAssignments.map(
+        (a: Assignment) => ({
           ...a,
           grade: a.grade !== undefined ? Number(a.grade) : undefined,
           isGradeEncrypted: false,
-        }));
+        })
+      );
 
-        storageUpdates.push(
-          AsyncStorage.setItem(
-            "assignments",
-            JSON.stringify(processedAssignments)
-          )
-        );
-      }
+      console.log(
+        "JSON.stringify(processedResponseAssignments)",
+        JSON.stringify(processedResponseAssignments)
+      );
 
-      if (response?.courses?.length > 0) {
-        let processedCourses = response.courses;
+      storageUpdates.push(
+        AsyncStorage.setItem(
+          "assignments",
+          JSON.stringify(processedResponseAssignments)
+        )
+      );
 
-        processedCourses = processedCourses.map((c: Course) => ({
-          ...c,
-          grade: c.grade !== undefined ? Number(c.grade) : undefined,
-          isGradeEncrypted: false,
-          gradeHistory: c.gradeHistory?.map((point) => ({
-            ...point,
-            grade: Number(point.grade),
-            isEncrypted: false,
-          })),
-        }));
+      let processedResponseCourses = response.courses;
 
-        storageUpdates.push(
-          AsyncStorage.setItem("courses", JSON.stringify(processedCourses))
-        );
-      }
+      processedResponseCourses = processedResponseCourses.map((c: Course) => ({
+        ...c,
+        grade: c.grade !== undefined ? Number(c.grade) : undefined,
+        isGradeEncrypted: false,
+        gradeHistory: c.gradeHistory?.map((point) => ({
+          ...point,
+          grade: Number(point.grade),
+          isEncrypted: false,
+        })),
+      }));
 
-      if (response?.studySessions?.length > 0) {
-        storageUpdates.push(
-          AsyncStorage.setItem(
-            "study_sessions",
-            JSON.stringify(response.studySessions)
-          )
-        );
-      }
+      storageUpdates.push(
+        AsyncStorage.setItem(
+          "courses",
+          JSON.stringify(processedResponseCourses)
+        )
+      );
+
+      storageUpdates.push(
+        AsyncStorage.setItem(
+          "study_sessions",
+          JSON.stringify(response.studySessions)
+        )
+      );
 
       if (signal.aborted) {
         console.log(`[SYNC] "${operation}" aborted before storage update`);
