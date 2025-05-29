@@ -1,7 +1,7 @@
 {
   "name": "yan-dashboard",
   "main": "expo-router/entry",
-  "version": "0.2.0-beta.5",
+  "version": "0.2.0-rc.0",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
