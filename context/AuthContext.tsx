@@ -1,3 +1,4 @@
+import { EncryptionService } from "@/services/encryption-service";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import CryptoJS from "crypto-js";
 import React, {
@@ -5,10 +6,12 @@ import React, {
   ReactNode,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
+import { Platform } from "react-native";
 import { ApiClient } from "../services/api-client";
-import { EncryptionService } from "../services/encryption-service";
+import { SyncService } from "../services/sync-service";
 
 type AuthUser = {
   id: string;
@@ -29,9 +32,13 @@ type AuthContextType = {
   logout: () => Promise<void>;
   syncData: () => Promise<void>;
   updateUser: (data: UpdateUserData) => Promise<void>;
+  lastSyncTime: Date | null;
+  isOnline: boolean;
+  isSyncing: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const LOCAL_LAST_UPDATE_KEY = "local_last_update";
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
@@ -42,6 +49,33 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isSyncingRef = useRef(false);
+
+  const SYNC_INTERVAL = 30 * 1000;
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (isSyncing || isSyncingRef.current) {
+          e.preventDefault();
+          const message =
+            "You have unsaved changes. Are you sure you want to leave?";
+          e.returnValue = message;
+          return message;
+        }
+      };
+
+      window.addEventListener("beforeunload", handleBeforeUnload);
+
+      return () => {
+        window.removeEventListener("beforeunload", handleBeforeUnload);
+      };
+    }
+  }, [isSyncing]);
 
   const updateUser = async (data: { name?: string }) => {
     try {
@@ -57,6 +91,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const performPeriodicSync = async () => {
+    if (isSyncingRef.current || !user) {
+      console.log(
+        "Skipping periodic sync - another sync is already in progress"
+      );
+      return;
+    }
+
+    try {
+      isSyncingRef.current = true;
+      setIsSyncing(true);
+      console.log("Performing periodic sync...");
+
+      await SyncService.performFullSync();
+
+      await SyncService.refreshAllData();
+
+      setLastSyncTime(new Date());
+      setIsOnline(true);
+
+      console.log("Periodic sync completed successfully.");
+    } catch (error: any) {
+      console.error("Periodic sync failed:", error);
+      if (error.message !== "Sync aborted") {
+        setIsOnline(false);
+      }
+
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+      }
+      syncIntervalRef.current = setInterval(performPeriodicSync, 10 * 1000);
+    } finally {
+      isSyncingRef.current = false;
+      setIsSyncing(false);
+    }
+  };
+
+  const startPeriodicSync = () => {
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+    }
+    syncIntervalRef.current = setInterval(performPeriodicSync, SYNC_INTERVAL);
+    console.log(`Periodic sync started with ${SYNC_INTERVAL / 1000}s interval`);
+  };
+
+  const stopPeriodicSync = () => {
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
+      console.log("Periodic sync stopped");
+    }
+  };
+
   useEffect(() => {
     async function checkAuth() {
       try {
@@ -64,6 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (token) {
           const data = await ApiClient.getMe();
           setUser(data.user);
+        } else {
+          await clearLocalData();
         }
       } catch (error) {
         console.error("Auth check failed:", error);
@@ -76,8 +165,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth();
   }, []);
 
+  async function clearLocalData() {
+    try {
+      await Promise.all([
+        AsyncStorage.removeItem("assignments"),
+        AsyncStorage.removeItem("courses"),
+        AsyncStorage.removeItem("study_sessions"),
+        AsyncStorage.removeItem("password_hash"),
+        AsyncStorage.removeItem("user_encryption_key"),
+        AsyncStorage.removeItem("deleted_assignments"),
+        AsyncStorage.removeItem("aiSuggestions"),
+        AsyncStorage.removeItem("lastSyncTime"),
+        AsyncStorage.removeItem(LOCAL_LAST_UPDATE_KEY), // Also clear the sync time
+      ]);
+      console.log("Local data cleared due to invalid authentication");
+    } catch (error) {
+      console.error("Failed to clear local data:", error);
+    }
+  }
+
+  useEffect(() => {
+    if (user && !loading) {
+      startPeriodicSync();
+
+      performPeriodicSync();
+    } else {
+      stopPeriodicSync();
+    }
+
+    return () => {
+      stopPeriodicSync();
+    };
+  }, [user, loading]);
+
   async function login(email: string, password: string) {
-    setLoading(true);
     try {
       const user = await ApiClient.login(email, password);
 
@@ -88,14 +209,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(user);
 
+      setIsSyncing(true);
+
       await syncData();
+      await SyncService.refreshAllData();
 
       return user;
     } catch (error) {
       console.error("Login error:", error);
       throw error;
     } finally {
-      setLoading(false);
+      setIsSyncing(false);
     }
   }
 
@@ -115,8 +239,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function logout() {
     setLoading(true);
     try {
+      stopPeriodicSync();
+
       await ApiClient.logout();
       setUser(null);
+      await clearLocalData();
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
@@ -171,7 +298,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, syncData, updateUser }}
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        syncData,
+        updateUser,
+        lastSyncTime,
+        isOnline,
+        isSyncing,
+      }}
     >
       {children}
     </AuthContext.Provider>

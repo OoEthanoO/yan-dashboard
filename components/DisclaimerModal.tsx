@@ -1,15 +1,14 @@
-import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  Linking,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
+import React from "react";
+import {
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 type DisclaimerModalProps = {
   visible: boolean;
@@ -75,21 +74,6 @@ export default function DisclaimerModal({
 
             <View style={styles.section}>
               <Ionicons
-                name="analytics-outline"
-                size={28}
-                color="#3b82f6"
-                style={styles.icon}
-              />
-              <Text style={styles.sectionTitle}>How the AI Helps You</Text>
-              <Text style={styles.text}>
-                The AI analyzes your encrypted academic data within a secure
-                environment to provide personalized study suggestions, without
-                exposing your actual grades to anyone.
-              </Text>
-            </View>
-
-            <View style={styles.section}>
-              <Ionicons
                 name="key-outline"
                 size={28}
                 color="#3b82f6"
@@ -126,7 +110,7 @@ export default function DisclaimerModal({
               </TouchableOpacity>
               <Text style={styles.smallText}>
                 The encryption implementation can be found in the
-                secure-decryption.js and encryption-service.js files.
+                encryption-service.js files.
               </Text>
             </View>
           </ScrollView>
