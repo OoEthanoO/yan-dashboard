@@ -192,6 +192,11 @@ export class ApiClient {
     return response;
   }
 
+  static async getVersionHistory() {
+    const response = await this.request("/version-history");
+    return response.versionHistory;
+  }
+
   static async getAiSuggestions(assignments, courses, studySessions) {
     return await this.request("/suggestions", "POST", {
       assignments,
