@@ -148,6 +148,23 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
+      const tempId = `temp_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+      const newAssignment = {
+        ...assignment,
+        id: tempId,
+        grade:
+          assignment.grade !== undefined ? Number(assignment.grade) : undefined,
+        isGradeEncrypted: false,
+      };
+
+      setAssignments((current) => {
+        const updated = [...current, newAssignment];
+        console.log("Assignments after adding:", updated);
+        return updated;
+      });
+
       await OperationQueue.enqueue({
         id: `add-assignment-${Date.now()}`,
         type: "add",
@@ -168,29 +185,32 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             };
           }
 
-          const tempId = `temp_${Date.now()}_${Math.random()
-            .toString(36)
-            .substring(2, 9)}`;
-          const newAssignment = {
-            ...processedAssignment,
-            id: tempId,
-          };
+          // Only perform persistent storage operations
+          try {
+            const serverAssignment = await ApiClient.createAssignment(
+              processedAssignment
+            );
 
-          const localData = await SyncService.getLocalData();
-          const updatedAssignments = [...localData.assignments, newAssignment];
-          await SyncService.updateAndSync(updatedAssignments);
-
-          setAssignments((current) => [
-            ...current,
-            {
-              ...newAssignment,
-              grade:
-                newAssignment.grade !== undefined
-                  ? Number(newAssignment.grade)
-                  : undefined,
-              isGradeEncrypted: false,
-            },
-          ]);
+            // Then update local storage with the server response
+            const localData = await SyncService.getLocalData();
+            const updatedAssignments = [
+              ...localData.assignments.filter(
+                (a: Assignment) => a.id !== tempId
+              ), // Remove temp assignment
+              { ...processedAssignment, id: serverAssignment.id || tempId },
+            ];
+            console.log("Updated assignments:", updatedAssignments);
+            await SyncService.updateAndSync(updatedAssignments);
+          } catch (error) {
+            console.error("Error syncing with server:", error);
+            // Fallback: just update local storage with temp ID
+            const localData = await SyncService.getLocalData();
+            const updatedAssignments = [
+              ...localData.assignments,
+              { ...processedAssignment, id: tempId },
+            ];
+            await SyncService.updateAndSync(updatedAssignments);
+          }
         },
       });
     } catch (error) {
@@ -203,6 +223,8 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   const removeAssignment = async (id: string) => {
     try {
       setLoading(true);
+
+      setAssignments((current) => current.filter((a) => a.id !== id));
 
       await OperationQueue.enqueue({
         id: `remove-assignment-${id}-${Date.now()}`,
@@ -220,8 +242,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             "assignments",
             JSON.stringify(updatedAssignments)
           );
-
-          setAssignments((current) => current.filter((a) => a.id !== id));
 
           try {
             await ApiClient.deleteAssignment(id);
@@ -251,6 +271,22 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   ) => {
     try {
       setLoading(true);
+
+      const numericGrade =
+        grade === undefined
+          ? undefined
+          : typeof grade === "string"
+          ? Number(grade)
+          : grade;
+
+      setAssignments((current) =>
+        current.map((a) => {
+          if (a.id === id) {
+            return { ...a, grade: numericGrade };
+          }
+          return a;
+        })
+      );
 
       await OperationQueue.enqueue({
         id: `grade-assignment-${id}-${Date.now()}`,
@@ -284,14 +320,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
           await SyncService.updateAndSync(updatedAssignments);
 
-          setAssignments((current) =>
-            current.map((a) => {
-              if (a.id === id) {
-                return { ...a, grade: numericGrade };
-              }
-              return a;
-            })
-          );
           const dueDate = assignment?.dueDate;
           if (dueDate) {
             const now = new Date();
@@ -320,6 +348,15 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
+      setAssignments((current) =>
+        current.map((a) => {
+          if (a.id === id) {
+            return { ...a, completed: !a.completed };
+          }
+          return a;
+        })
+      );
+
       await OperationQueue.enqueue({
         id: `toggle-assignment-${id}-${Date.now()}`,
         type: "update",
@@ -345,15 +382,6 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
 
             await SyncService.updateAndSync(updatedAssignments);
 
-            setAssignments((current) =>
-              current.map((a) => {
-                if (a.id === id) {
-                  return { ...a, completed: !a.completed };
-                }
-                return a;
-              })
-            );
-
             await ApiClient.updateAssignment(id, {
               completed: !assignment.completed,
             });
@@ -373,6 +401,15 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
   ) => {
     try {
       setLoading(true);
+
+      setAssignments((current) =>
+        current.map((a) => {
+          if (a.id === id) {
+            return { ...a, ...updatedData };
+          }
+          return a;
+        })
+      );
 
       await OperationQueue.enqueue({
         id: `update-assignment-${id}-${Date.now()}`,

@@ -167,6 +167,8 @@ export class ApiClient {
       timestampedData.courses
     );
 
+    console.log("encryptedAssignments:", encryptedAssignments);
+
     const response = await this.request("/sync", "POST", {
       assignments: encryptedAssignments,
       courses: encryptedCourses,
@@ -175,6 +177,8 @@ export class ApiClient {
       lastSyncTime,
       localLastUpdateTime,
     });
+
+    console.log("response:", response);
 
     await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
     await this.setLastSyncTime(response.lastSync);

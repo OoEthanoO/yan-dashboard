@@ -340,6 +340,8 @@ export const SyncService = {
       const processedAssignments =
         await EncryptionService.processAssignmentsForSync(assignments);
 
+      console.log("processedAssignments", processedAssignments);
+
       const processedCourses = await EncryptionService.processCoursesForSync(
         courses
       );
