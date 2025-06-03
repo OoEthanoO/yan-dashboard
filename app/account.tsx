@@ -184,6 +184,7 @@ export default function AccountScreen() {
               value={name}
               onChangeText={setName}
               placeholder="Your name"
+              placeholderTextColor="#aaa"
             />
 
             <Text style={styles.inputLabel}>Email Address</Text>
@@ -192,6 +193,7 @@ export default function AccountScreen() {
               value={email}
               editable={false}
               placeholder="Your email"
+              placeholderTextColor="#aaa"
             />
 
             <TouchableOpacity
@@ -218,6 +220,7 @@ export default function AccountScreen() {
               onChangeText={setCurrentPassword}
               placeholder="Enter current password"
               secureTextEntry
+              placeholderTextColor="#aaa"
             />
 
             <Text style={styles.inputLabel}>New Password</Text>
@@ -227,6 +230,7 @@ export default function AccountScreen() {
               onChangeText={setNewPassword}
               placeholder="Enter new password"
               secureTextEntry
+              placeholderTextColor="#aaa"
             />
 
             <Text style={styles.inputLabel}>Confirm New Password</Text>
@@ -236,6 +240,7 @@ export default function AccountScreen() {
               onChangeText={setConfirmPassword}
               placeholder="Confirm new password"
               secureTextEntry
+              placeholderTextColor="#aaa"
             />
 
             <TouchableOpacity

@@ -1,15 +1,15 @@
-import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
+import React from "react";
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function PrivacyScreen() {
   const router = useRouter();
@@ -66,21 +66,6 @@ export default function PrivacyScreen() {
             Your encrypted data is stored securely in our database and is only
             accessible by you. Your password is hashed and cannot be recovered
             by anyone, including our team.
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <Ionicons
-            name="analytics"
-            size={32}
-            color="#3b82f6"
-            style={styles.sectionIcon}
-          />
-          <Text style={styles.sectionTitle}>AI Processing</Text>
-          <Text style={styles.sectionText}>
-            When providing personalized suggestions, your data is temporarily
-            decrypted in a secure environment accessible only to our AI system.
-            The AI does not store your data after processing.
           </Text>
         </View>
 

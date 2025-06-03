@@ -107,10 +107,11 @@ export default function ProfileBar() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.statusContainer}>
-        {isDebugMode && <Text style={styles.debugText}>DEBUG</Text>}
-      </View>
+      <View style={styles.statusContainer}></View>
       <View style={styles.profileSection}>
+        {isDebugMode && (
+          <Text style={[styles.debugText, { marginRight: 8 }]}>DEBUG</Text>
+        )}
         {isSyncing && (
           <ActivityIndicator
             size="small"

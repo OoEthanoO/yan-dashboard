@@ -9,22 +9,14 @@ const TestEncryptionService = {
     if (data === null || data === undefined) return data;
 
     try {
-      console.log(`[ENCRYPT] Input grade data: ${data} (type: ${typeof data})`);
-      console.log(`[ENCRYPT] Using test key: ${combinedKey}`);
-
       const stringData = JSON.stringify(data);
-      console.log(`[ENCRYPT] Stringified grade data: ${stringData}`);
 
       const encrypted = CryptoJS.AES.encrypt(
         stringData,
         combinedKey
       ).toString();
-      console.log(
-        `[ENCRYPT] Resulting encrypted data: ${encrypted.substring(0, 20)}...`
-      );
       return encrypted;
     } catch (error) {
-      console.error("[ENCRYPT] Encryption error:", error);
       return null;
     }
   },
@@ -33,23 +25,13 @@ const TestEncryptionService = {
     if (!encryptedData) return null;
 
     try {
-      console.log(
-        `[DECRYPT] Attempting to decrypt: ${encryptedData.substring(0, 20)}...`
-      );
-      console.log(`[DECRYPT] Using test key: ${combinedKey}`);
-
       const bytes = CryptoJS.AES.decrypt(encryptedData, combinedKey);
       const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
-      console.log(`[DECRYPT] Decrypted string: ${decryptedString}`);
 
       const parsedValue = JSON.parse(decryptedString);
-      console.log(
-        `[DECRYPT] Parsed value: ${parsedValue} (type: ${typeof parsedValue})`
-      );
 
       return parsedValue;
     } catch (error) {
-      console.error("[DECRYPT] Decryption error:", error);
       return null;
     }
   },

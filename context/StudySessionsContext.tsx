@@ -1,3 +1,5 @@
+import { OperationQueue } from "@/services/operation-queue-service";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   ReactNode,
@@ -6,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { ApiClient } from "../services/api-client";
+import { SyncService } from "../services/sync-service";
 
 export type StudySession = {
   id: string;
@@ -44,9 +47,31 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const fetchSessions = async () => {
     try {
       setLoading(true);
+
+      const localData = await SyncService.getLocalData();
+      if (localData.studySessions && localData.studySessions.length > 0) {
+        setSessions(localData.studySessions);
+      }
+
       const data = await ApiClient.getAllData();
       if (data?.studySessions) {
-        setSessions(data.studySessions);
+        await AsyncStorage.setItem(
+          "study_sessions",
+          JSON.stringify(data.studySessions)
+        );
+
+        const localSessions = await SyncService.getLocalData().then(
+          (data) => data.studySessions || []
+        );
+
+        if (
+          JSON.stringify(localSessions) === JSON.stringify(data.studySessions)
+        ) {
+          console.log("Local study sessions are already up-to-date.");
+        } else {
+          console.log("Updating local study sessions from server data.");
+          setSessions(data.studySessions);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch study sessions:", error);
@@ -57,6 +82,19 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchSessions();
+
+    const unsubscribe = SyncService.subscribeToDataChanges(async () => {
+      try {
+        const localData = await SyncService.getLocalData();
+        if (localData.studySessions) {
+          setSessions(localData.studySessions);
+        }
+      } catch (error) {
+        console.error("Error updating study sessions after sync:", error);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const refreshSessions = async () => {
@@ -66,8 +104,31 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const addSession = async (session: Omit<StudySession, "id">) => {
     try {
       setLoading(true);
-      await ApiClient.createStudySession(session);
-      await fetchSessions();
+
+      await OperationQueue.enqueue({
+        id: `add-session-${Date.now()}`,
+        type: "add",
+        context: "study-sessions",
+        execute: async () => {
+          const tempId = `${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 9)}`;
+          const newSession = {
+            ...session,
+            id: tempId,
+          };
+
+          const localData = await SyncService.getLocalData();
+          const updatedSessions = [...localData.studySessions, newSession];
+          await SyncService.updateAndSync(
+            undefined,
+            undefined,
+            updatedSessions
+          );
+
+          await fetchSessions();
+        },
+      });
     } catch (error) {
       console.error("Failed to add study session:", error);
     } finally {
@@ -78,8 +139,25 @@ export function StudySessionsProvider({ children }: { children: ReactNode }) {
   const removeSession = async (id: string) => {
     try {
       setLoading(true);
-      await ApiClient.deleteStudySession(id);
-      await fetchSessions();
+
+      await OperationQueue.enqueue({
+        id: `remove-session-${id}-${Date.now()}`,
+        type: "remove",
+        context: "study-sessions",
+        execute: async () => {
+          const localData = await SyncService.getLocalData();
+          const updatedSessions = localData.studySessions.filter(
+            (s: StudySession) => s.id !== id
+          );
+          await SyncService.updateAndSync(
+            undefined,
+            undefined,
+            updatedSessions
+          );
+
+          await ApiClient.deleteStudySession(id);
+        },
+      });
     } catch (error) {
       console.error("Failed to delete study session:", error);
     } finally {

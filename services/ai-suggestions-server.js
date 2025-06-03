@@ -52,6 +52,7 @@ const UserSchema = new mongoose.Schema(
     encryptionKey: { type: String },
     createdAt: { type: Date, default: Date.now },
     lastSync: { type: Date, default: Date.now },
+    lastUpdateTime: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
@@ -301,10 +302,25 @@ app.post("/api/sync", authenticate, async (req, res) => {
       studySessions,
       lastSyncTime,
       deletedAssignmentIds,
+      localLastUpdateTime,
     } = req.body;
     const userId = req.user._id;
-    const clientLastSync = new Date(lastSyncTime || 0);
-    const serverLastSync = req.user.lastSync;
+
+    const serverLastUpdateTime = req.user.lastUpdateTime
+      ? new Date(req.user.lastUpdateTime)
+      : new Date(0);
+
+    const clientLastUpdateTime = localLastUpdateTime
+      ? new Date(localLastUpdateTime)
+      : new Date(0);
+
+    const clientDataIsNewer = clientLastUpdateTime > serverLastUpdateTime;
+
+    console.log(`[SYNC] Client last update: ${clientLastUpdateTime}`);
+    console.log(`[SYNC] Server last update: ${serverLastUpdateTime}`);
+    console.log(
+      `[SYNC] Client data is ${clientDataIsNewer ? "newer" : "older"}`
+    );
 
     if (
       deletedAssignmentIds &&
@@ -316,81 +332,80 @@ app.post("/api/sync", authenticate, async (req, res) => {
       }
     }
 
-    if (assignments && Array.isArray(assignments)) {
-      for (const assignment of assignments) {
-        await Assignment.findOneAndUpdate(
-          { userId, syncId: assignment.id },
-          {
-            userId,
-            title: assignment.title,
-            dueDate: assignment.dueDate,
-            description: assignment.description || "",
-            courseId: assignment.courseId,
-            grade: assignment.grade,
-            completed: assignment.completed || false,
-            syncId: assignment.id,
-          },
-          { upsert: true, new: true }
-        );
+    if (clientDataIsNewer) {
+      console.log("[SYNC] Client data is newer, updating server data");
+
+      if (assignments && Array.isArray(assignments)) {
+        for (const assignment of assignments) {
+          await Assignment.findOneAndUpdate(
+            { userId, syncId: assignment.id },
+            {
+              userId,
+              title: assignment.title,
+              dueDate: assignment.dueDate,
+              description: assignment.description || "",
+              courseId: assignment.courseId,
+              grade: assignment.grade,
+              completed: assignment.completed || false,
+              syncId: assignment.id,
+            },
+            { upsert: true, new: true }
+          );
+        }
       }
+
+      if (courses && Array.isArray(courses)) {
+        for (const course of courses) {
+          await Course.findOneAndUpdate(
+            { userId, syncId: course.id },
+            {
+              userId,
+              name: course.name,
+              grade: course.grade,
+              gradeHistory: course.gradeHistory || [],
+              syncId: course.id,
+            },
+            { upsert: true, new: true }
+          );
+        }
+      }
+
+      if (studySessions && Array.isArray(studySessions)) {
+        for (const session of studySessions) {
+          await StudySession.findOneAndUpdate(
+            { userId, syncId: session.id },
+            {
+              userId,
+              courseId: session.courseId,
+              date: session.date,
+              durationMinutes: session.durationMinutes,
+              notes: session.notes || "",
+              syncId: session.id,
+            },
+            { upsert: true, new: true }
+          );
+        }
+      }
+    } else {
+      console.log("[SYNC] Server data is newer, sending server data to client");
     }
 
-    if (courses && Array.isArray(courses)) {
-      for (const course of courses) {
-        await Course.findOneAndUpdate(
-          { userId, syncId: course.id },
-          {
-            userId,
-            name: course.name,
-            grade: course.grade,
-            gradeHistory: course.gradeHistory || [],
-            syncId: course.id,
-          },
-          { upsert: true, new: true }
-        );
-      }
+    if (clientDataIsNewer || !req.user.lastUpdateTime) {
+      req.user.lastSync = new Date();
     }
 
-    if (studySessions && Array.isArray(studySessions)) {
-      for (const session of studySessions) {
-        await StudySession.findOneAndUpdate(
-          { userId, syncId: session.id },
-          {
-            userId,
-            courseId: session.courseId,
-            date: session.date,
-            durationMinutes: session.durationMinutes,
-            notes: session.notes || "",
-            syncId: session.id,
-          },
-          { upsert: true, new: true }
-        );
-      }
-    }
-
-    const updatedAssignments = await Assignment.find({
-      userId,
-      updatedAt: { $gt: clientLastSync },
-    });
-
-    const updatedCourses = await Course.find({
-      userId,
-      updatedAt: { $gt: clientLastSync },
-    });
-
-    const updatedStudySessions = await StudySession.find({
-      userId,
-      updatedAt: { $gt: clientLastSync },
-    });
-
-    req.user.lastSync = new Date();
     await req.user.save();
+
+    console.log("[SYNC] req.user.lastUpdateTime", req.user.lastUpdateTime);
 
     res.json({
       success: true,
       lastSync: req.user.lastSync,
+      serverLastUpdateTime: req.user.lastUpdateTime
+        ? req.user.lastUpdateTime.toISOString()
+        : new Date().toISOString(),
       data: {
-        assignments: updatedAssignments.map((a) => ({
+        assignments: (await Assignment.find({ userId })).map((a) => ({
           id: a.syncId,
           title: a.title,
           dueDate: a.dueDate,
@@ -398,19 +413,22 @@ app.post("/api/sync", authenticate, async (req, res) => {
           courseId: a.courseId,
           grade: a.grade,
           completed: a.completed,
+          _serverUpdatedAt: a.updatedAt.toISOString(),
         })),
-        courses: updatedCourses.map((c) => ({
+        courses: (await Course.find({ userId })).map((c) => ({
           id: c.syncId,
           name: c.name,
           grade: c.grade,
           gradeHistory: c.gradeHistory,
+          _serverUpdatedAt: c.updatedAt.toISOString(),
         })),
-        studySessions: updatedStudySessions.map((s) => ({
+        studySessions: (await StudySession.find({ userId })).map((s) => ({
           id: s.syncId,
           courseId: s.courseId,
           date: s.date,
           durationMinutes: s.durationMinutes,
           notes: s.notes,
+          _serverUpdatedAt: s.updatedAt.toISOString(),
         })),
       },
     });

@@ -6,6 +6,7 @@ const PROD_API_URL = "https://yan-dashboard.onrender.com/api";
 const DEV_API_URL = "http://localhost:4000/api";
 const AUTH_TOKEN_KEY = "auth_token";
 const LAST_SYNC_KEY = "last_sync_time";
+const LOCAL_LAST_UPDATE_KEY = "local_last_update_time";
 
 export class ApiClient {
   static async isDebugMode() {
@@ -128,8 +129,25 @@ export class ApiClient {
     return await this.request("/auth/me");
   }
 
-  static async syncData(assignments, courses, studySessions) {
+  static async syncData(
+    assignments,
+    courses,
+    studySessions,
+    localLastUpdateTime
+  ) {
     const lastSyncTime = (await this.getLastSyncTime()) || new Date(0);
+
+    const timestampedData = {
+      assignments: await this.prepareItemsWithTimestamps(
+        assignments,
+        "assignments"
+      ),
+      courses: await this.prepareItemsWithTimestamps(courses, "courses"),
+      studySessions: await this.prepareItemsWithTimestamps(
+        studySessions,
+        "studySessions"
+      ),
+    };
 
     let deletedAssignmentIds = [];
     try {
@@ -142,22 +160,35 @@ export class ApiClient {
     }
 
     const encryptedAssignments =
-      await EncryptionService.processAssignmentsForSync(assignments);
+      await EncryptionService.processAssignmentsForSync(
+        timestampedData.assignments
+      );
     const encryptedCourses = await EncryptionService.processCoursesForSync(
-      courses
+      timestampedData.courses
     );
+
+    console.log("encryptedAssignments:", encryptedAssignments);
 
     const response = await this.request("/sync", "POST", {
       assignments: encryptedAssignments,
       courses: encryptedCourses,
-      studySessions,
+      studySessions: timestampedData.studySessions,
       deletedAssignmentIds,
       lastSyncTime,
+      localLastUpdateTime,
     });
 
-    await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
+    console.log("response:", response);
 
+    await AsyncStorage.setItem("deleted_assignments", JSON.stringify([]));
     await this.setLastSyncTime(response.lastSync);
+
+    if (response.serverLastUpdateTime) {
+      await AsyncStorage.setItem(
+        LOCAL_LAST_UPDATE_KEY,
+        response.serverLastUpdateTime
+      );
+    }
 
     if (response.data?.assignments?.length) {
       response.data.assignments = await EncryptionService.decryptAssignments(
@@ -171,7 +202,48 @@ export class ApiClient {
       );
     }
 
-    return response.data;
+    return {
+      ...response.data,
+      serverLastUpdateTime: response.serverLastUpdateTime,
+    };
+  }
+
+  static async prepareItemsWithTimestamps(items, storageKey) {
+    const timestampsStr = await AsyncStorage.getItem(
+      `${storageKey}_timestamps`
+    );
+    const timestamps = timestampsStr ? JSON.parse(timestampsStr) : {};
+
+    return items.map((item) => {
+      return {
+        ...item,
+        _lastModified: timestamps[item.id] || new Date().toISOString(),
+      };
+    });
+  }
+
+  static async markAssignmentForDeletion(id) {
+    try {
+      let deletedIds = [];
+      const deletedIdsStr = await AsyncStorage.getItem("deleted_assignments");
+
+      if (deletedIdsStr) {
+        deletedIds = JSON.parse(deletedIdsStr);
+      }
+
+      if (!deletedIds.includes(id)) {
+        deletedIds.push(id);
+      }
+
+      await AsyncStorage.setItem(
+        "deleted_assignments",
+        JSON.stringify(deletedIds)
+      );
+      return true;
+    } catch (error) {
+      console.error("Error marking assignment for deletion:", error);
+      return false;
+    }
   }
 
   static async getAllData() {

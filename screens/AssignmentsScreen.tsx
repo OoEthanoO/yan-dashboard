@@ -20,7 +20,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import DatePicker from "../components/DatePicker";
+import DatePicker, {
+  componentsToMMMDDYYYY,
+  dateToComponents,
+  parseLocalDateToComponents,
+} from "../components/DatePicker";
 import { Assignment, useAssignments } from "../context/AssignmentsContext";
 
 export default function AssignmentsScreen() {
@@ -406,8 +410,11 @@ export default function AssignmentsScreen() {
                 style={styles.input}
                 value={editingAssignment ? editTitle : title}
                 onChangeText={editingAssignment ? setEditTitle : setTitle}
+                placeholderTextColor="#aaa"
               />
-              <Text style={styles.inputLabel}>Due Date</Text>
+              <Text style={styles.inputLabel}>
+                Due Date <Text style={styles.requiredAsterisk}>*</Text>
+              </Text>
               <DatePicker
                 value={editingAssignment ? editDueDate : dueDate}
                 onChange={(date) => {
@@ -420,43 +427,64 @@ export default function AssignmentsScreen() {
                 style={styles.inlineDatePicker}
               />
 
-              <Text style={styles.inputLabel}>Course</Text>
-              <ScrollView horizontal style={{ marginBottom: 8 }}>
-                {courses.map((course) => (
+              <Text style={styles.inputLabel}>
+                Course <Text style={styles.requiredAsterisk}>*</Text>
+              </Text>
+              {courses.length === 0 ? (
+                <View style={styles.noCourseContainer}>
+                  <Text style={styles.noCourseText}>
+                    You need to create a course before adding assignments.
+                  </Text>
                   <TouchableOpacity
-                    key={course.id}
-                    style={[
-                      styles.courseSelectBtn,
-                      (editingAssignment
-                        ? editCourseId === course.id
-                        : selectedCourseId === course.id) &&
-                        styles.courseSelectBtnActive,
-                    ]}
+                    style={styles.createCourseButton}
                     onPress={() => {
-                      if (editingAssignment) {
-                        setEditCourseId(course.id);
-                      } else {
-                        setSelectedCourseId(course.id);
-                      }
+                      setModalVisible(false);
+                      setCourseModalVisible(true);
                     }}
                   >
-                    <Text
-                      style={{
-                        color: (
-                          editingAssignment
-                            ? editCourseId === course.id
-                            : selectedCourseId === course.id
-                        )
-                          ? "#fff"
-                          : "#3b82f6",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      {course.name}
+                    <Text style={styles.createCourseButtonText}>
+                      Create a Course
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                </View>
+              ) : (
+                <ScrollView horizontal style={{ marginBottom: 8 }}>
+                  {courses.map((course) => (
+                    <TouchableOpacity
+                      key={course.id}
+                      style={[
+                        styles.courseSelectBtn,
+                        (editingAssignment
+                          ? editCourseId === course.id
+                          : selectedCourseId === course.id) &&
+                          styles.courseSelectBtnActive,
+                      ]}
+                      onPress={() => {
+                        if (editingAssignment) {
+                          setEditCourseId(course.id);
+                        } else {
+                          setSelectedCourseId(course.id);
+                        }
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: (
+                            editingAssignment
+                              ? editCourseId === course.id
+                              : selectedCourseId === course.id
+                          )
+                            ? "#fff"
+                            : "#3b82f6",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {course.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
               <TextInput
                 placeholder="Description (optional)"
                 style={[styles.input, { height: 60 }]}
@@ -465,6 +493,7 @@ export default function AssignmentsScreen() {
                   editingAssignment ? setEditDescription : setDescription
                 }
                 multiline
+                placeholderTextColor="#aaa"
               />
               <View
                 style={{
@@ -531,6 +560,7 @@ export default function AssignmentsScreen() {
                               ]}
                               placeholder="e.g. 90"
                               keyboardType="numeric"
+                              placeholderTextColor="#aaa"
                             />
                             <TouchableOpacity
                               onPress={() => {
@@ -597,6 +627,7 @@ export default function AssignmentsScreen() {
                 style={styles.input}
                 value={newCourseName}
                 onChangeText={setNewCourseName}
+                placeholderTextColor="#aaa"
               />
               <TouchableOpacity
                 style={styles.addCourseBtn}
@@ -632,6 +663,7 @@ export default function AssignmentsScreen() {
                 value={studyDuration}
                 onChangeText={setStudyDuration}
                 keyboardType="numeric"
+                placeholderTextColor="#aaa"
               />
               <TextInput
                 placeholder="Notes (optional)"
@@ -639,6 +671,7 @@ export default function AssignmentsScreen() {
                 value={studyNotes}
                 onChangeText={setStudyNotes}
                 multiline
+                placeholderTextColor="#aaa"
               />
               <View
                 style={{
@@ -714,6 +747,7 @@ export default function AssignmentsScreen() {
                     style={styles.gradeHistoryInput}
                     placeholder="95"
                     keyboardType="numeric"
+                    placeholderTextColor="#aaa"
                   />
                 </View>
                 <TouchableOpacity
@@ -746,11 +780,9 @@ export default function AssignmentsScreen() {
                     >
                       <View style={styles.gradeHistoryItemContent}>
                         <Text style={styles.gradeHistoryDate}>
-                          {new Date(point.date).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
+                          {componentsToMMMDDYYYY(
+                            parseLocalDateToComponents(point.date)
+                          )}
                         </Text>
                         <Text style={styles.gradeHistoryValue}>
                           {point.grade}%
@@ -989,10 +1021,23 @@ export default function AssignmentsScreen() {
     }
   }
 
+  function isDateInPastOrToday(dateString: string): boolean {
+    const todayComponents = dateToComponents(new Date());
+    const dateComponents = parseLocalDateToComponents(dateString);
+
+    return (
+      dateComponents[2] < todayComponents[2] ||
+      (dateComponents[2] === todayComponents[2] &&
+        (dateComponents[0] < todayComponents[0] ||
+          (dateComponents[0] === todayComponents[0] &&
+            dateComponents[1] <= todayComponents[1])))
+    );
+  }
+
   function AssignmentCard({ item }: { item: Assignment }) {
     const [expanded, setExpanded] = useState(false);
     const [localGradeInput, setLocalGradeInput] = useState<string>("");
-    const isOverdue = new Date(item.dueDate) < new Date() && !item.completed;
+    const isOverdue = isDateInPastOrToday(item.dueDate) && !item.completed;
     const courseColor = getColorForCourse(item.courseId);
 
     useEffect(() => {
@@ -1094,7 +1139,7 @@ export default function AssignmentsScreen() {
             </TouchableOpacity>
 
             {/* Grade button - only visible for past due or completed */}
-            {(new Date(item.dueDate) <= new Date() || item.completed) && (
+            {isDateInPastOrToday(item.dueDate) && item.completed && (
               <TouchableOpacity
                 style={styles.iconButton}
                 onPress={() => {
@@ -1313,7 +1358,7 @@ export default function AssignmentsScreen() {
                       {formatDate(session.date)}
                     </Text>
                   </View>
-                  {session.notes && (
+                  {session.notes !== "" && (
                     <Text style={styles.sessionCardNotes}>{session.notes}</Text>
                   )}
                 </View>
@@ -1415,6 +1460,7 @@ export default function AssignmentsScreen() {
                           style={styles.courseGradeInput}
                           keyboardType="numeric"
                           placeholder="95"
+                          placeholderTextColor="#aaa"
                         />
                         <Text style={styles.percentSign}>%</Text>
                         <TouchableOpacity
@@ -2768,5 +2814,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
     ...(Platform.OS === "web" && { zIndex: 1 }),
+  },
+  noCourseContainer: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  noCourseText: {
+    color: "#64748b",
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  createCourseButton: {
+    backgroundColor: "#3b82f6",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  createCourseButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  requiredAsterisk: {
+    color: "#ef4444",
+    fontWeight: "bold",
   },
 });

@@ -11,6 +11,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -62,6 +63,8 @@ const testEnvironments = [
 
 export default function VersionHistoryScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isSmallScreen = width < 611;
   const currentVersion = APP_VERSION;
   const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>(
     []
@@ -209,9 +212,53 @@ export default function VersionHistoryScreen() {
                   </Text>
                 </View>
                 <View style={styles.environmentInfo}>
-                  <View style={styles.environmentUrlContainer}>
+                  <View
+                    style={[
+                      styles.environmentUrlContainer,
+                      isSmallScreen && styles.environmentUrlContainerSmall,
+                    ]}
+                  >
                     <Text style={styles.environmentUrl}>{env.url}</Text>
-                    <View style={styles.indicatorsContainer}>
+                    {!isSmallScreen && (
+                      <View style={styles.indicatorsContainer}>
+                        {isLatest && (
+                          <View style={styles.latestIndicator}>
+                            <Ionicons
+                              name="radio-button-on"
+                              size={12}
+                              color="#22c55e"
+                            />
+                            <Text style={styles.latestText}>LATEST BUILD</Text>
+                          </View>
+                        )}
+                        {isCurrent && !isBoth && (
+                          <View style={styles.currentIndicator}>
+                            <Ionicons
+                              name="location"
+                              size={12}
+                              color="#3b82f6"
+                            />
+                            <Text style={styles.currentText}>
+                              CURRENT BUILD
+                            </Text>
+                          </View>
+                        )}
+                        {isBoth && (
+                          <View style={styles.bothIndicator}>
+                            <Ionicons
+                              name="location"
+                              size={12}
+                              color="#3b82f6"
+                            />
+                            <Text style={styles.bothText}>CURRENT BUILD</Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+
+                  {isSmallScreen && (
+                    <View style={styles.indicatorsContainerSmall}>
                       {isLatest && (
                         <View style={styles.latestIndicator}>
                           <Ionicons
@@ -235,7 +282,8 @@ export default function VersionHistoryScreen() {
                         </View>
                       )}
                     </View>
-                  </View>
+                  )}
+
                   <Text style={styles.environmentDescription}>
                     {isLatest && isCurrent
                       ? `${env.description} This environment contains both your current version and the latest changes being worked on.`
@@ -632,5 +680,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#94a3b8",
     fontFamily: "monospace",
+  },
+  environmentUrlContainerSmall: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
+  indicatorsContainerSmall: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+    marginTop: 4,
   },
 });

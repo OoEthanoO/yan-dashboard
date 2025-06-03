@@ -6,35 +6,31 @@ const AI_PUBLIC_KEY = "AI_MODEL_PUBLIC_KEY_2023";
 
 const USER_ENCRYPTION_KEY = "user_encryption_key";
 
+let keyMemoryCache = null;
+
 export const EncryptionService = {
   getUserEncryptionKey: async () => {
-    console.log(
-      "[GET_KEY] Attempting to get user encryption key from server first"
-    );
+    if (keyMemoryCache) {
+      return keyMemoryCache;
+    }
 
     let userKey = await EncryptionService.retrieveEncryptionKeyFromServer();
 
     if (userKey) {
-      console.log(
-        "[GET_KEY] Successfully retrieved encryption key from server"
-      );
+      keyMemoryCache = userKey;
       return userKey;
     }
 
-    console.log("[GET_KEY] No key from server, checking local storage");
     userKey = await AsyncStorage.getItem(USER_ENCRYPTION_KEY);
 
     if (userKey) {
-      console.log("[GET_KEY] Found key in local storage, syncing to server");
       await EncryptionService.syncEncryptionKey(userKey);
       return userKey;
     }
 
-    console.log("[GET_KEY] No key found, generating new encryption key");
     userKey = CryptoJS.lib.WordArray.random(256 / 8).toString();
     await AsyncStorage.setItem(USER_ENCRYPTION_KEY, userKey);
 
-    console.log("[GET_KEY] Syncing newly generated key to server");
     await EncryptionService.syncEncryptionKey(userKey);
 
     return userKey;
@@ -86,22 +82,18 @@ export const EncryptionService = {
     if (data === null || data === undefined) return data;
 
     try {
-      console.log(`[ENCRYPT] Input grade data: ${data} (type: ${typeof data})`);
       const userKey = await EncryptionService.getUserEncryptionKey();
 
       const combinedKey = `${AI_PUBLIC_KEY}_${userKey}`;
-      console.log(`[ENCRYPT] Using combined key for encryption`);
 
       const stringData = JSON.stringify(data);
       const encrypted = CryptoJS.AES.encrypt(
         stringData,
         combinedKey
       ).toString();
-      console.log(`[ENCRYPT] Data encrypted successfully`);
 
       return encrypted;
     } catch (error) {
-      console.error("[ENCRYPT] Encryption error:", error);
       return null;
     }
   },
@@ -110,7 +102,6 @@ export const EncryptionService = {
     if (!encryptedData) return null;
 
     try {
-      console.log(`[DECRYPT] Attempting to decrypt data`);
       const userKey = await EncryptionService.getUserEncryptionKey();
       const combinedKey = `${AI_PUBLIC_KEY}_${userKey}`;
 
@@ -118,9 +109,6 @@ export const EncryptionService = {
       const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
 
       if (!decryptedString) {
-        console.log(
-          "[DECRYPT] Initial decryption failed, trying to retrieve key from server"
-        );
         await EncryptionService.retrieveEncryptionKeyFromServer();
 
         const newUserKey = await EncryptionService.getUserEncryptionKey();
@@ -129,7 +117,6 @@ export const EncryptionService = {
         const newDecryptedString = newBytes.toString(CryptoJS.enc.Utf8);
 
         if (!newDecryptedString) {
-          console.error("[DECRYPT] Failed to decrypt with retrieved key");
           return null;
         }
 
@@ -155,18 +142,8 @@ export const EncryptionService = {
         assignment.grade !== null &&
         !assignment.isGradeEncrypted
       ) {
-        console.log(
-          `[PROCESS] Assignment before encryption: ${
-            assignment.title
-          }, grade: ${assignment.grade} (type: ${typeof assignment.grade})`
-        );
         const encryptedGrade = await EncryptionService.encryptGradeData(
           assignment.grade
-        );
-        console.log(
-          `[PROCESS] Assignment after encryption: ${
-            assignment.title
-          }, encrypted grade: ${encryptedGrade.substring(0, 20)}...`
         );
 
         processedAssignments.push({
@@ -246,7 +223,7 @@ export const EncryptionService = {
     const decryptedAssignments = [];
 
     for (const assignment of encryptedAssignments) {
-      if (assignment && assignment.isGradeEncrypted && assignment.grade) {
+      if (assignment && assignment.grade) {
         const decryptedGrade = await EncryptionService.decryptGradeData(
           assignment.grade
         );
@@ -278,7 +255,7 @@ export const EncryptionService = {
 
       const decryptedCourse = { ...course };
 
-      if (course.isGradeEncrypted && course.grade) {
+      if (course.grade) {
         decryptedCourse.grade = await EncryptionService.decryptGradeData(
           course.grade
         );
@@ -289,7 +266,7 @@ export const EncryptionService = {
         const decryptedHistory = [];
 
         for (const point of course.gradeHistory) {
-          if (point && point.isEncrypted && point.grade) {
+          if (point && point.grade) {
             decryptedHistory.push({
               date: point.date,
               grade: await EncryptionService.decryptGradeData(point.grade),
