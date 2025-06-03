@@ -55,7 +55,7 @@ const testEnvironments = [
     name: "Production",
     type: "production",
     url: "https://yandashboard.com",
-    description: "Stable production version",
+    description: "Stable production version.",
     badgeColor: "#dcfce7",
     textColor: "#14532d",
   },
