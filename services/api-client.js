@@ -321,4 +321,57 @@ export class ApiClient {
   static async getUserEncryptionKey() {
     return await this.request("/auth/encryption-key");
   }
+
+  static async isAdmin() {
+    try {
+      const response = await this.request("/auth/me");
+      return response.user?.role === "admin";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  static async getAdminStats() {
+    return await this.request("/admin/stats");
+  }
+
+  static async getAdminUsers() {
+    return await this.request("/admin/users");
+  }
+
+  static async getAdminIssues() {
+    return await this.request("/admin/issues");
+  }
+
+  static async createAdminIssue(issueData) {
+    return await this.request("/admin/issues", "POST", issueData);
+  }
+
+  static async updateAdminIssue(id, issueData) {
+    return await this.request(`/admin/issues/${id}`, "PUT", issueData);
+  }
+
+  static async deleteAdminIssue(id) {
+    return await this.request(`/admin/issues/${id}`, "DELETE");
+  }
+
+  static async getAdminVersionHistory() {
+    return await this.request("/admin/version-history");
+  }
+
+  static async createAdminVersionHistory(versionData) {
+    return await this.request("/admin/version-history", "POST", versionData);
+  }
+
+  static async updateAdminVersionHistory(id, versionData) {
+    return await this.request(
+      `/admin/version-history/${id}`,
+      "PUT",
+      versionData
+    );
+  }
+
+  static async deleteAdminVersionHistory(id) {
+    return await this.request(`/admin/version-history/${id}`, "DELETE");
+  }
 }

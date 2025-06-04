@@ -176,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         AsyncStorage.removeItem("deleted_assignments"),
         AsyncStorage.removeItem("aiSuggestions"),
         AsyncStorage.removeItem("lastSyncTime"),
-        AsyncStorage.removeItem(LOCAL_LAST_UPDATE_KEY), // Also clear the sync time
+        AsyncStorage.removeItem(LOCAL_LAST_UPDATE_KEY),
       ]);
       console.log("Local data cleared due to invalid authentication");
     } catch (error) {

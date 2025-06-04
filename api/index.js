@@ -53,6 +53,7 @@ const UserSchema = new mongoose.Schema(
     createdAt: { type: Date, default: Date.now },
     lastSync: { type: Date, default: Date.now },
     lastUpdateTime: { type: Date, default: Date.now },
+    role: { type: String, enum: ["user", "admin"], default: "user" },
   },
   { timestamps: true }
 );
@@ -205,6 +206,36 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+const authenticateAdmin = async (req, res, next) => {
+  try {
+    const token = req.header("Authorization")?.replace("Bearer ", "");
+
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "default_jwt_secret"
+    );
+    const user = await User.findById(decoded._id);
+
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    if (user.role !== "admin") {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    req.user = user;
+    req.token = token;
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Invalid token" });
+  }
+};
+
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -284,12 +315,16 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.get("/api/auth/me", authenticate, (req, res) => {
+  console.log("req.user", req.user);
+  console.log("req.user.role", req.user.role);
+
   res.json({
     user: {
       id: req.user._id,
       email: req.user.email,
       name: req.user.name,
       lastSync: req.user.lastSync,
+      role: req.user.role || "user",
     },
   });
 });
@@ -994,6 +1029,153 @@ app.get("/api/version-history", async (req, res) => {
       .json({ success: false, error: "Failed to fetch version history" });
   }
 });
+
+app.get("/api/admin/users", authenticateAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}, { password: 0, encryptionKey: 0 }).sort({
+      createdAt: -1,
+    });
+    res.json(users);
+  } catch (err) {
+    console.error("Admin users fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+app.get("/api/admin/stats", authenticateAdmin, async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const totalAssignments = await Assignment.countDocuments();
+    const totalCourses = await Course.countDocuments();
+    const totalStudySessions = await StudySession.countDocuments();
+    const totalIssues = await Issue.countDocuments();
+    const totalVersions = await VersionHistory.countDocuments();
+
+    res.json({
+      totalUsers,
+      totalAssignments,
+      totalCourses,
+      totalStudySessions,
+      totalIssues,
+      totalVersions,
+    });
+  } catch (err) {
+    console.error("Admin stats fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+app.get("/api/admin/issues", authenticateAdmin, async (req, res) => {
+  try {
+    const issues = await Issue.find({}).sort({ createdAt: -1 });
+    res.json(issues);
+  } catch (err) {
+    console.error("Admin issues fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch issues" });
+  }
+});
+
+app.post("/api/admin/issues", authenticateAdmin, async (req, res) => {
+  try {
+    const { title, description, type, priority, status } = req.body;
+    const issue = new Issue({ title, description, type, priority, status });
+    await issue.save();
+    res.status(201).json(issue);
+  } catch (err) {
+    console.error("Admin issue creation error:", err);
+    res.status(500).json({ error: "Failed to create issue" });
+  }
+});
+
+app.put("/api/admin/issues/:id", authenticateAdmin, async (req, res) => {
+  try {
+    const issue = await Issue.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+    if (!issue) {
+      return res.status(404).json({ error: "Issue not found" });
+    }
+    res.json(issue);
+  } catch (err) {
+    console.error("Admin issue update error:", err);
+    res.status(500).json({ error: "Failed to update issue" });
+  }
+});
+
+app.delete("/api/admin/issues/:id", authenticateAdmin, async (req, res) => {
+  try {
+    const issue = await Issue.findByIdAndDelete(req.params.id);
+    if (!issue) {
+      return res.status(404).json({ error: "Issue not found" });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Admin issue deletion error:", err);
+    res.status(500).json({ error: "Failed to delete issue" });
+  }
+});
+
+app.get("/api/admin/version-history", authenticateAdmin, async (req, res) => {
+  try {
+    const versions = await VersionHistory.find({}).sort({ createdAt: -1 });
+    res.json(versions);
+  } catch (err) {
+    console.error("Admin version history fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch version history" });
+  }
+});
+
+app.post("/api/admin/version-history", authenticateAdmin, async (req, res) => {
+  try {
+    const { version, date, type, changes } = req.body;
+    const versionHistory = new VersionHistory({ version, date, type, changes });
+    await versionHistory.save();
+    res.status(201).json(versionHistory);
+  } catch (err) {
+    console.error("Admin version history creation error:", err);
+    res.status(500).json({ error: "Failed to create version history" });
+  }
+});
+
+app.put(
+  "/api/admin/version-history/:id",
+  authenticateAdmin,
+  async (req, res) => {
+    try {
+      const versionHistory = await VersionHistory.findByIdAndUpdate(
+        req.params.id,
+        req.body,
+        { new: true }
+      );
+      if (!versionHistory) {
+        return res.status(404).json({ error: "Version history not found" });
+      }
+      res.json(versionHistory);
+    } catch (err) {
+      console.error("Admin version history update error:", err);
+      res.status(500).json({ error: "Failed to update version history" });
+    }
+  }
+);
+
+app.delete(
+  "/api/admin/version-history/:id",
+  authenticateAdmin,
+  async (req, res) => {
+    try {
+      const versionHistory = await VersionHistory.findByIdAndDelete(
+        req.params.id
+      );
+      if (!versionHistory) {
+        return res.status(404).json({ error: "Version history not found" });
+      }
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Admin version history deletion error:", err);
+      res.status(500).json({ error: "Failed to delete version history" });
+    }
+  }
+);
 
 function getCourseName(courseId, courses) {
   const course = courses.find((c) => c.id === courseId);

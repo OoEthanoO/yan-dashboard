@@ -19,10 +19,20 @@ export default function ProfileBar() {
   const { user, logout } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
   const [isDebugMode, setIsDebugMode] = useState(false);
 
   if (!user) return null;
+
+  const checkAdminStatus = useCallback(async () => {
+    try {
+      const adminStatus = await ApiClient.isAdmin();
+      setIsAdmin(adminStatus);
+    } catch (error) {
+      console.error("Failed to check admin status:", error);
+    }
+  }, []);
 
   const checkDebugMode = useCallback(async () => {
     try {
@@ -36,15 +46,19 @@ export default function ProfileBar() {
   useEffect(() => {
     const timer = setTimeout(() => {
       checkDebugMode();
+      checkAdminStatus();
     }, 500);
 
-    const interval = setInterval(checkDebugMode, 5000);
+    const interval = setInterval(() => {
+      checkDebugMode();
+      checkAdminStatus();
+    }, 5000);
 
     return () => {
       clearTimeout(timer);
       clearInterval(interval);
     };
-  }, [checkDebugMode]);
+  }, [checkDebugMode, checkAdminStatus]);
 
   useEffect(() => {
     setIsSyncing(true);
@@ -112,6 +126,9 @@ export default function ProfileBar() {
         {isDebugMode && (
           <Text style={[styles.debugText, { marginRight: 8 }]}>DEBUG</Text>
         )}
+        {isAdmin && (
+          <Text style={[styles.adminText, { marginRight: 8 }]}>ADMIN</Text>
+        )}
         {isSyncing && (
           <ActivityIndicator
             size="small"
@@ -149,6 +166,26 @@ export default function ProfileBar() {
             <Ionicons name="person" size={18} color="#64748b" />
             <Text style={styles.menuItemText}>Account Settings</Text>
           </TouchableOpacity>
+
+          {isAdmin && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push("/admin");
+              }}
+            >
+              <Ionicons name="shield-checkmark" size={18} color="#ef4444" />
+              <Text
+                style={[
+                  styles.menuItemText,
+                  { color: "#ef4444", fontWeight: "600" },
+                ]}
+              >
+                Admin Panel
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={styles.menuItem}
@@ -328,5 +365,10 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 12,
     color: "#94a3b8",
+  },
+  adminText: {
+    color: "#ef4444",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });
