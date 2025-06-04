@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   FlatList,
@@ -106,6 +107,18 @@ export default function AssignmentsScreen() {
     grade: "",
   });
 
+  const [studyPatterns, setStudyPatterns] = useState<{
+    preferredStudyTimes: string[];
+    averageSessionLength: number;
+    subjectDifficulty: Record<string, number>;
+    productivityTrends: number[];
+  }>({
+    preferredStudyTimes: [],
+    averageSessionLength: 0,
+    subjectDifficulty: {},
+    productivityTrends: [],
+  });
+
   const isIOS = Platform.OS === "ios";
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
@@ -161,13 +174,110 @@ export default function AssignmentsScreen() {
     loadSavedSuggestions();
   }, []);
 
+  function renderSmartStudyPlan() {
+    return (
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.studyPlanContainer}>
+          <Text style={styles.sectionTitle}>🧠 Smart Study Planner</Text>
+
+          {/* Quick Stats */}
+          <View style={styles.planStatsContainer}>
+            <View style={styles.planStatCard}>
+              <Text style={styles.planStatNumber}>
+                {
+                  assignments.filter(
+                    (a) => !a.completed && new Date(a.dueDate) > new Date()
+                  ).length
+                }
+              </Text>
+              <Text style={styles.planStatLabel}>Upcoming</Text>
+            </View>
+            <View style={styles.planStatCard}>
+              <Text style={styles.planStatNumber}>
+                {courses.filter((c) => c.grade && Number(c.grade) < 80).length}
+              </Text>
+              <Text style={styles.planStatLabel}>Need Focus</Text>
+            </View>
+            <View style={styles.planStatCard}>
+              <Text style={styles.planStatNumber}>
+                {Math.round(
+                  sessions.reduce((sum, s) => sum + s.durationMinutes, 0) / 60
+                )}
+                h
+              </Text>
+              <Text style={styles.planStatLabel}>Total Study</Text>
+            </View>
+          </View>
+
+          {/* AI Study Plan */}
+          <View style={styles.aiPlanCard}>
+            <View style={styles.aiPlanHeader}>
+              <Ionicons name="bulb" size={24} color="#8b5cf6" />
+              <Text style={styles.aiPlanTitle}>
+                Your Personalized Study Schedule
+              </Text>
+              <TouchableOpacity
+                style={styles.refreshPlanButton}
+                onPress={() => fetchAISuggestions()}
+                disabled={loadingSuggestions}
+              >
+                {loadingSuggestions ? (
+                  <ActivityIndicator size="small" color="#8b5cf6" />
+                ) : (
+                  <Ionicons name="refresh" size={20} color="#8b5cf6" />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {aiSuggestions ? (
+              <ScrollView style={styles.aiPlanContent} nestedScrollEnabled>
+                <Text style={styles.aiPlanText}>{aiSuggestions}</Text>
+              </ScrollView>
+            ) : (
+              <TouchableOpacity
+                style={styles.generatePlanButton}
+                onPress={() => fetchAISuggestions()}
+              >
+                <Text style={styles.generatePlanButtonText}>
+                  Generate Smart Study Plan
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.quickActionsContainer}>
+            <Text style={styles.sectionSubtitle}>Quick Actions</Text>
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => openStudyModal(courses[0]?.id)}
+            >
+              <Ionicons name="play" size={20} color="#10b981" />
+              <Text style={styles.quickActionText}>Start Study Session</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.quickActionButton}
+              onPress={() => setActiveTab("assignments")}
+            >
+              <Ionicons name="list" size={20} color="#f59e0b" />
+              <Text style={styles.quickActionText}>View All Assignments</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    );
+  }
+
   async function fetchAISuggestions() {
     setLoadingSuggestions(true);
     try {
+      const patterns = analyzeStudyPatterns();
       const data = await ApiClient.getAiSuggestions(
         assignments,
         courses,
-        sessions
+        sessions,
+        patterns
       );
 
       const timestamp = new Date().toISOString();
@@ -179,12 +289,13 @@ export default function AssignmentsScreen() {
         JSON.stringify({
           suggestions: data.suggestions,
           timestamp,
+          metadata: data.metadata,
         })
       );
     } catch (e) {
       console.error("Error fetching AI suggestions:", e);
       setAiSuggestions(
-        "Could not fetch AI suggestions. Please check your network connection and try again."
+        "Could not generate study plan. Please check your network connection and try again."
       );
     }
     setLoadingSuggestions(false);
@@ -1776,6 +1887,80 @@ export default function AssignmentsScreen() {
 
     updateCourseGradeHistory(courseId, updatedHistory);
   }
+
+  function analyzeStudyPatterns() {
+    const patterns = {
+      preferredStudyTimes: getPreferredStudyTimes(sessions),
+      averageSessionLength:
+        sessions.reduce((sum, s) => sum + s.durationMinutes, 0) /
+          sessions.length || 30,
+      subjectDifficulty: calculateSubjectDifficulty(courses, assignments),
+      productivityTrends: calculateProductivityTrends(sessions),
+    };
+    setStudyPatterns(patterns);
+    return patterns;
+  }
+
+  function getPreferredStudyTimes(sessions: any[]): string[] {
+    const timeSlots = { morning: 0, afternoon: 0, evening: 0 };
+    sessions.forEach((session) => {
+      const hour = new Date(session.date).getHours();
+      if (hour < 12) timeSlots.morning++;
+      else if (hour < 18) timeSlots.afternoon++;
+      else timeSlots.evening++;
+    });
+
+    return Object.entries(timeSlots)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 2)
+      .map(([time]) => time);
+  }
+
+  function calculateSubjectDifficulty(
+    courses: any[],
+    assignments: any[]
+  ): Record<string, number> {
+    const difficulty: Record<string, number> = {};
+    courses.forEach((course) => {
+      const courseAssignments = assignments.filter(
+        (a) => a.courseId === course.id
+      );
+      const completionRate =
+        courseAssignments.filter((a) => a.completed).length /
+          courseAssignments.length || 0;
+      const gradeScore = course.grade ? parseFloat(course.grade) : 75;
+
+      difficulty[course.id] = Math.max(
+        1,
+        Math.min(5, 6 - (completionRate * 2 + gradeScore / 20))
+      );
+    });
+    return difficulty;
+  }
+
+  function calculateProductivityTrends(sessions: any[]): number[] {
+    const weeklyData: Record<
+      string,
+      { totalMinutes: number; sessions: number }
+    > = {};
+    sessions.forEach((session) => {
+      const week = getWeekKey(new Date(session.date));
+      if (!weeklyData[week])
+        weeklyData[week] = { totalMinutes: 0, sessions: 0 };
+      weeklyData[week].totalMinutes += session.durationMinutes;
+      weeklyData[week].sessions++;
+    });
+
+    return Object.values(weeklyData).map(
+      (week) => week.totalMinutes / week.sessions || 0
+    );
+  }
+
+  function getWeekKey(date: Date): string {
+    const year = date.getFullYear();
+    const week = Math.ceil((date.getDate() - date.getDay() + 1) / 7);
+    return `${year}-W${week}`;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -2842,5 +3027,101 @@ const styles = StyleSheet.create({
   requiredAsterisk: {
     color: "#ef4444",
     fontWeight: "bold",
+  },
+  studyPlanContainer: {
+    padding: 16,
+  },
+  planStatsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+  planStatCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    flex: 1,
+    marginHorizontal: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  planStatNumber: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  planStatLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 4,
+  },
+  aiPlanCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  aiPlanHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  aiPlanTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#111827",
+    flex: 1,
+    marginLeft: 12,
+  },
+  refreshPlanButton: {
+    padding: 8,
+  },
+  aiPlanContent: {
+    maxHeight: 400,
+  },
+  aiPlanText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: "#374151",
+  },
+  generatePlanButton: {
+    backgroundColor: "#8b5cf6",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  generatePlanButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  quickActionsContainer: {
+    marginTop: 20,
+  },
+  quickActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  quickActionText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#374151",
+    marginLeft: 12,
   },
 });

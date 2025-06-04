@@ -269,12 +269,39 @@ export class ApiClient {
     return response.versionHistory;
   }
 
-  static async getAiSuggestions(assignments, courses, studySessions) {
-    return await this.request("/suggestions", "POST", {
-      assignments,
-      courses,
-      studySessions,
+  static async getAiSuggestions(
+    assignments,
+    courses,
+    studySessions,
+    studyPatterns
+  ) {
+    const token = await this.getToken();
+    const baseURL = await this.getApiUrl();
+
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${baseURL}/suggestions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        assignments,
+        courses,
+        studySessions,
+        studyPatterns,
+      }),
     });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return response.json();
   }
 
   static async updateUser(data) {
