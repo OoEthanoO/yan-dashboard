@@ -1,10 +1,11 @@
 import { ApiClient } from "@/services/api-client";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Modal,
   RefreshControl,
   ScrollView,
@@ -51,6 +52,8 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminCheckLoading, setAdminCheckLoading] = useState(true);
+  const [lastAdminCheck, setLastAdminCheck] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState<
     "dashboard" | "issues" | "versions"
   >("dashboard");
@@ -81,22 +84,139 @@ export default function AdminPanel() {
     changes: [""],
   });
 
-  const checkAdminAccess = useCallback(async () => {
+  const adminCheckIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+  const isMountedRef = useRef(true);
+  const lastKnownAdminStatusRef = useRef<boolean | null>(null);
+
+  const performAdminCheck = useCallback(async () => {
     try {
       const adminStatus = await ApiClient.isAdmin();
-      setIsAdmin(adminStatus);
-      if (!adminStatus) {
-        Alert.alert("Access Denied", "You don't have admin privileges.", [
-          { text: "OK", onPress: () => router.replace("/") },
-        ]);
+      const currentTime = new Date();
+
+      if (isMountedRef.current) {
+        setLastAdminCheck(currentTime);
+        setAdminCheckLoading(false);
+
+        if (
+          lastKnownAdminStatusRef.current !== null &&
+          lastKnownAdminStatusRef.current !== adminStatus
+        ) {
+          console.log(
+            `Admin status changed: ${lastKnownAdminStatusRef.current} -> ${adminStatus}`
+          );
+
+          if (!adminStatus) {
+            Alert.alert(
+              "Access Revoked",
+              "Your admin privileges have been revoked. You will be redirected.",
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    if (isMountedRef.current) {
+                      router.replace("/");
+                    }
+                  },
+                },
+              ],
+              { cancelable: false }
+            );
+          }
+        }
+
+        lastKnownAdminStatusRef.current = adminStatus;
+        setIsAdmin(adminStatus);
+
+        if (!adminStatus && !adminCheckLoading) {
+          router.replace("/");
+        }
       }
     } catch (error) {
       console.error("Failed to check admin status:", error);
-      Alert.alert("Error", "Failed to verify admin access.", [
-        { text: "OK", onPress: () => router.replace("/") },
-      ]);
+      if (isMountedRef.current) {
+        setLastAdminCheck(new Date());
+        setAdminCheckLoading(false);
+        if (lastKnownAdminStatusRef.current !== false) {
+          lastKnownAdminStatusRef.current = false;
+          setIsAdmin(false);
+          Alert.alert(
+            "Error",
+            "Failed to verify admin access. You will be redirected.",
+            [{ text: "OK", onPress: () => router.replace("/") }]
+          );
+        }
+      }
     }
-  }, [router]);
+  }, [router, adminCheckLoading]);
+
+  const startAdminChecking = useCallback(() => {
+    if (adminCheckIntervalRef.current) {
+      clearInterval(adminCheckIntervalRef.current);
+    }
+
+    performAdminCheck();
+
+    adminCheckIntervalRef.current = setInterval(() => {
+      if (isMountedRef.current) {
+        performAdminCheck();
+      }
+    }, 500);
+  }, [performAdminCheck]);
+
+  const stopAdminChecking = useCallback(() => {
+    if (adminCheckIntervalRef.current) {
+      clearInterval(adminCheckIntervalRef.current);
+      adminCheckIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === "active") {
+        performAdminCheck();
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      "change",
+      handleAppStateChange
+    );
+    return () => subscription?.remove();
+  }, [performAdminCheck]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    startAdminChecking();
+
+    return () => {
+      isMountedRef.current = false;
+      stopAdminChecking();
+    };
+  }, [startAdminChecking, stopAdminChecking]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const handleFocus = () => performAdminCheck();
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          performAdminCheck();
+        }
+      };
+
+      window.addEventListener("focus", handleFocus);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+
+      return () => {
+        window.removeEventListener("focus", handleFocus);
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange
+        );
+      };
+    }
+  }, [performAdminCheck]);
 
   const fetchData = useCallback(async () => {
     if (!isAdmin) return;
@@ -109,21 +229,23 @@ export default function AdminPanel() {
         ApiClient.getAdminVersionHistory(),
       ]);
 
-      setStats(statsData);
-      setIssues(issuesData);
-      setVersions(versionsData);
+      if (isMountedRef.current) {
+        setStats(statsData);
+        setIssues(issuesData);
+        setVersions(versionsData);
+      }
     } catch (error) {
       console.error("Failed to fetch admin data:", error);
-      Alert.alert("Error", "Failed to fetch admin data");
+      if (isMountedRef.current) {
+        Alert.alert("Error", "Failed to fetch admin data");
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [isAdmin]);
-
-  useEffect(() => {
-    checkAdminAccess();
-  }, [checkAdminAccess]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -301,12 +423,35 @@ export default function AdminPanel() {
     setVersionModalVisible(true);
   };
 
-  if (!isAdmin) {
+  if (adminCheckLoading || !lastAdminCheck) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#ef4444" />
           <Text style={styles.loadingText}>Verifying admin access...</Text>
+          <Text style={styles.subLoadingText}>
+            Performing security checks...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Ionicons name="shield-checkmark-outline" size={64} color="#ef4444" />
+          <Text style={styles.accessDeniedTitle}>Access Denied</Text>
+          <Text style={styles.accessDeniedText}>
+            You don't have admin privileges to access this panel.
+          </Text>
+          <TouchableOpacity
+            style={styles.backToHomeButton}
+            onPress={() => router.replace("/")}
+          >
+            <Text style={styles.backToHomeButtonText}>Return to Home</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -314,6 +459,17 @@ export default function AdminPanel() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.adminStatusBar}>
+        <View style={styles.adminStatusContent}>
+          <Ionicons name="shield-checkmark" size={16} color="#ef4444" />
+          <Text style={styles.adminStatusText}>ADMIN ACCESS VERIFIED</Text>
+          <View style={styles.adminStatusIndicator} />
+        </View>
+        <Text style={styles.lastCheckText}>
+          Last check: {lastAdminCheck.toLocaleTimeString()}
+        </Text>
+      </View>
+
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -555,7 +711,6 @@ export default function AdminPanel() {
         )}
       </ScrollView>
 
-      {/* Issue Modal */}
       <Modal
         visible={issueModalVisible}
         transparent
@@ -700,7 +855,6 @@ export default function AdminPanel() {
         </View>
       </Modal>
 
-      {/* Version Modal */}
       <Modal
         visible={versionModalVisible}
         transparent
@@ -847,6 +1001,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
   },
+  adminStatusBar: {
+    backgroundColor: "#fef2f2",
+    borderBottomWidth: 1,
+    borderBottomColor: "#fecaca",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  adminStatusContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  adminStatusText: {
+    color: "#ef4444",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  adminStatusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ef4444",
+  },
+  lastCheckText: {
+    color: "#ef4444",
+    fontSize: 10,
+    opacity: 0.8,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -906,6 +1092,36 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: "#64748b",
+  },
+  subLoadingText: {
+    marginTop: 4,
+    fontSize: 14,
+    color: "#94a3b8",
+  },
+  accessDeniedTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#ef4444",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  accessDeniedText: {
+    fontSize: 16,
+    color: "#64748b",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  backToHomeButton: {
+    backgroundColor: "#ef4444",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  backToHomeButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   dashboardContainer: {
     marginBottom: 24,
