@@ -185,25 +185,22 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             };
           }
 
-          // Only perform persistent storage operations
           try {
             const serverAssignment = await ApiClient.createAssignment(
               processedAssignment
             );
 
-            // Then update local storage with the server response
             const localData = await SyncService.getLocalData();
             const updatedAssignments = [
               ...localData.assignments.filter(
                 (a: Assignment) => a.id !== tempId
-              ), // Remove temp assignment
+              ),
               { ...processedAssignment, id: serverAssignment.id || tempId },
             ];
             console.log("Updated assignments:", updatedAssignments);
             await SyncService.updateAndSync(updatedAssignments);
           } catch (error) {
             console.error("Error syncing with server:", error);
-            // Fallback: just update local storage with temp ID
             const localData = await SyncService.getLocalData();
             const updatedAssignments = [
               ...localData.assignments,
