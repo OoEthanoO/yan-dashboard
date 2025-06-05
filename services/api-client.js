@@ -273,7 +273,8 @@ export class ApiClient {
     assignments,
     courses,
     studySessions,
-    studyPatterns
+    studyPatterns,
+    dateContext
   ) {
     const token = await this.getToken();
     const baseURL = await this.getApiUrl();
@@ -294,6 +295,7 @@ export class ApiClient {
         courses,
         studySessions,
         studyPatterns,
+        dateContext,
       }),
     });
 

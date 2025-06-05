@@ -549,8 +549,26 @@ app.get("/api/data", authenticate, async (req, res) => {
 
 app.post("/api/suggestions", authenticate, async (req, res) => {
   try {
-    let { assignments, courses, studySessions, studyPatterns } = req.body;
+    let { assignments, courses, studySessions, studyPatterns, dateContext } =
+      req.body;
     const userId = req.user._id;
+
+    if (!dateContext) {
+      const currentDate = new Date();
+      dateContext = {
+        today: currentDate.toISOString().split("T")[0],
+        todayDayName: currentDate.toLocaleDateString("en-US", {
+          weekday: "long",
+        }),
+        todayFormatted: currentDate.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        timezone: "UTC",
+      };
+    }
 
     if (!assignments || !courses || !studySessions) {
       assignments = await Assignment.find({ userId });
@@ -646,6 +664,16 @@ app.post("/api/suggestions", authenticate, async (req, res) => {
     const prompt = `
 SMART STUDY PLANNING ANALYSIS - Generate a personalized weekly study schedule
 
+CURRENT DATE AND TIME CONTEXT:
+• Today is: ${dateContext.todayFormatted}
+• Current day of week: ${dateContext.todayDayName}
+• Today's date: ${dateContext.today}
+• User timezone: ${dateContext.timezone}
+
+IMPORTANT: When creating the weekly schedule, start from TODAY (${
+      dateContext.todayDayName
+    }) and proceed chronologically through the week. Make sure day names match the actual calendar dates.
+
 CURRENT ACADEMIC STATUS:
 ${coursePerformance
   .map(
@@ -658,31 +686,39 @@ ${coursePerformance
   )
   .join("\n")}
 
-URGENT PRIORITIES (Due within 7 days):
+URGENT PRIORITIES (Due within 7 days from today - ${dateContext.today}):
 ${
   urgentAssignments.length > 0
     ? urgentAssignments
-        .map(
-          (a) =>
-            `• ${a.title} (${
-              courses.find((c) => c.id === a.courseId)?.name
-            }) - Due: ${new Date(a.dueDate).toLocaleDateString()}`
-        )
+        .map((a) => {
+          const daysUntilDue = Math.ceil(
+            (new Date(a.dueDate).getTime() -
+              new Date(dateContext.today).getTime()) /
+              (1000 * 60 * 60 * 24)
+          );
+          return `• ${a.title} (${
+            courses.find((c) => c.id === a.courseId)?.name
+          }) - Due: ${new Date(
+            a.dueDate
+          ).toLocaleDateString()} (${daysUntilDue} days from today)`;
+        })
         .join("\n")
     : "No urgent assignments"
 }
 
-UPCOMING ASSIGNMENTS (Next 30 days):
+UPCOMING ASSIGNMENTS (Next 30 days from today):
 ${upcomingAssignments
   .slice(0, 10)
   .map((a) => {
     const daysUntilDue = Math.ceil(
-      (new Date(a.dueDate).getTime() - new Date().getTime()) /
+      (new Date(a.dueDate).getTime() - new Date(dateContext.today).getTime()) /
         (1000 * 60 * 60 * 24)
     );
     return `• ${a.title} (${
       courses.find((c) => c.id === a.courseId)?.name
-    }) - ${daysUntilDue} days`;
+    }) - Due: ${new Date(
+      a.dueDate
+    ).toLocaleDateString()} (${daysUntilDue} days from today)`;
   })
   .join("\n")}
 
@@ -707,22 +743,10 @@ PERFORMANCE ANALYSIS:
       .map((c) => `${c.name} (Grade: ${c.avgGrade || "N/A"})`)
       .join(", ")}
 
-GENERATE A DETAILED 7-DAY STUDY SCHEDULE with the following format:
-- Specific daily time blocks (consider typical student availability)
-- Subject rotation based on urgency and performance needs
-- Recommended session lengths based on historical patterns
-- Assignment-specific preparation timelines
-- Built-in review sessions for struggling subjects
-- Break recommendations to maintain productivity
-
-Provide actionable daily schedule with:
-• Monday through Sunday breakdown
-• Morning/Afternoon/Evening time slots
-• Specific courses and tasks for each slot
-• Estimated time commitment
-• Priority level (High/Medium/Low)
-
-Make recommendations based on ACTUAL DATA PATTERNS, not generic advice.
+GENERATE A DETAILED 7-DAY STUDY SCHEDULE starting from TODAY (${
+      dateContext.todayDayName
+    }, ${dateContext.today}) with the following format:
+// ...rest of existing prompt...
 `;
 
     console.log("Smart Study Planning prompt:", prompt);
@@ -796,6 +820,7 @@ ${coursePerformance
       res.json({
         suggestions: enhancedPlan,
         metadata: {
+          currentDate: dateContext,
           totalUpcoming: upcomingAssignments.length,
           urgentCount: urgentAssignments.length,
           priorityCourses: coursePerformance.slice(0, 3).map((c) => c.name),
@@ -814,12 +839,14 @@ ${coursePerformance
         upcomingAssignments,
         coursePerformance,
         studyStats,
-        urgentAssignments
+        urgentAssignments,
+        dateContext
       );
 
       res.json({
         suggestions: `⚠️ **AI Study Planner Unavailable - Using Structured Fallback**\n\n${fallbackPlan}\n\n*Note: This is a structured backup plan. AI-generated personalized schedules will be available when the service is restored.*`,
         metadata: {
+          currentDate: dateContext,
           totalUpcoming: upcomingAssignments.length,
           urgentCount: urgentAssignments.length,
           priorityCourses: coursePerformance.slice(0, 3).map((c) => c.name),
@@ -842,20 +869,28 @@ function generateDetailedStudyPlan(
   upcomingAssignments,
   coursePerformance,
   studyStats,
-  urgentAssignments
+  urgentAssignments,
+  dateContext
 ) {
-  const days = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-  ];
+  const currentDate = new Date(dateContext?.today || new Date());
+  const days = [];
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(currentDate);
+    date.setDate(currentDate.getDate() + i);
+    days.push({
+      name: date.toLocaleDateString("en-US", { weekday: "long" }),
+      date: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      fullDate: date.toISOString().split("T")[0],
+    });
+  }
   const timeSlots = ["Morning (9-12)", "Afternoon (2-5)", "Evening (7-9)"];
 
   let plan = "📅 **PERSONALIZED 7-DAY STUDY SCHEDULE**\n\n";
+  plan += `*Starting from ${dateContext?.todayFormatted || "today"}*\n\n`;
 
   const totalUpcoming = upcomingAssignments.length;
   const priorityCourses = coursePerformance.slice(0, 3);

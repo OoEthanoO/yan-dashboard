@@ -21,6 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Markdown from "react-native-markdown-display";
 import DatePicker, {
   componentsToMMMDDYYYY,
   dateToComponents,
@@ -231,7 +232,7 @@ export default function AssignmentsScreen() {
 
             {aiSuggestions ? (
               <ScrollView style={styles.aiPlanContent} nestedScrollEnabled>
-                <Text style={styles.aiPlanText}>{aiSuggestions}</Text>
+                <Markdown style={markdownStyles}>{aiSuggestions}</Markdown>
               </ScrollView>
             ) : (
               <TouchableOpacity
@@ -273,11 +274,28 @@ export default function AssignmentsScreen() {
     setLoadingSuggestions(true);
     try {
       const patterns = analyzeStudyPatterns();
+
+      const currentDate = new Date();
+      const dateContext = {
+        today: currentDate.toISOString().split("T")[0], // YYYY-MM-DD format
+        todayDayName: currentDate.toLocaleDateString("en-US", {
+          weekday: "long",
+        }),
+        todayFormatted: currentDate.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      };
+
       const data = await ApiClient.getAiSuggestions(
         assignments,
         courses,
         sessions,
-        patterns
+        patterns,
+        dateContext
       );
 
       const timestamp = new Date().toISOString();
@@ -1739,7 +1757,9 @@ export default function AssignmentsScreen() {
                 </Text>
               </View>
             ) : (
-              <Text style={styles.insightsText}>{aiSuggestions}</Text>
+              <ScrollView style={styles.insightsContent} nestedScrollEnabled>
+                <Markdown style={markdownStyles}>{aiSuggestions}</Markdown>
+              </ScrollView>
             )}
           </View>
         </View>
@@ -2548,6 +2568,10 @@ const styles = StyleSheet.create({
     color: "#1f2937",
     lineHeight: 22,
   },
+  insightsContent: {
+    maxHeight: 400,
+    paddingVertical: 8,
+  },
   loadingContainer: {
     alignItems: "center",
     paddingVertical: 16,
@@ -3125,3 +3149,102 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
 });
+
+const markdownStyles = {
+  body: {
+    color: "#333",
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+  },
+  heading1: {
+    fontSize: 20,
+    fontWeight: "bold" as const,
+    color: "#1f2937",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  heading2: {
+    fontSize: 18,
+    fontWeight: "bold" as const,
+    color: "#374151",
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  heading3: {
+    fontSize: 16,
+    fontWeight: "600" as const,
+    color: "#4b5563",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  strong: {
+    fontWeight: "bold" as const,
+    color: "#1f2937",
+  },
+  em: {
+    fontStyle: "italic" as const,
+  },
+  list_item: {
+    marginVertical: 2,
+  },
+  bullet_list: {
+    marginVertical: 8,
+  },
+  ordered_list: {
+    marginVertical: 8,
+  },
+  paragraph: {
+    marginVertical: 4,
+    lineHeight: 20,
+  },
+  code_inline: {
+    backgroundColor: "#f3f4f6",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 3,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    fontSize: 13,
+  },
+  code_block: {
+    backgroundColor: "#f8f9fa",
+    padding: 12,
+    borderRadius: 6,
+    marginVertical: 8,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    fontSize: 13,
+  },
+  blockquote: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#e5e7eb",
+    paddingLeft: 12,
+    marginVertical: 8,
+    fontStyle: "italic" as const,
+  },
+  table: {
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 6,
+    marginVertical: 8,
+    overflow: "hidden" as const,
+  },
+  thead: {
+    backgroundColor: "#f9fafb",
+  },
+  th: {
+    fontWeight: "bold" as const,
+    padding: 8,
+    borderBottomWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  td: {
+    padding: 8,
+    borderBottomWidth: 1,
+    borderColor: "#f3f4f6",
+  },
+  hr: {
+    backgroundColor: "#e5e7eb",
+    height: 1,
+    marginVertical: 16,
+  },
+};

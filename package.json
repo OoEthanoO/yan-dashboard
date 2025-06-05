@@ -1,7 +1,7 @@
 {
   "name": "yan-dashboard",
   "main": "expo-router/entry",
-  "version": "0.2.0",
+  "version": "0.3.0-alpha.1",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -55,6 +55,7 @@
     "react-native-gesture-handler": "~2.24.0",
     "react-native-get-random-values": "^1.11.0",
     "react-native-graph": "^1.1.0",
+    "react-native-markdown-display": "^7.0.2",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "^5.4.0",
     "react-native-screens": "~4.10.0",
