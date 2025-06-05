@@ -549,8 +549,26 @@ app.get("/api/data", authenticate, async (req, res) => {
 
 app.post("/api/suggestions", authenticate, async (req, res) => {
   try {
-    let { assignments, courses, studySessions } = req.body;
+    let { assignments, courses, studySessions, studyPatterns, dateContext } =
+      req.body;
     const userId = req.user._id;
+
+    if (!dateContext) {
+      const currentDate = new Date();
+      dateContext = {
+        today: currentDate.toISOString().split("T")[0],
+        todayDayName: currentDate.toLocaleDateString("en-US", {
+          weekday: "long",
+        }),
+        todayFormatted: currentDate.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        timezone: "UTC",
+      };
+    }
 
     if (!assignments || !courses || !studySessions) {
       assignments = await Assignment.find({ userId });
@@ -583,156 +601,360 @@ app.post("/api/suggestions", authenticate, async (req, res) => {
       }));
     }
 
-    const cleanedAssignments = assignments.map((assignment) => {
-      const now = new Date();
-      const dueDate = new Date(assignment.dueDate);
-
-      if (dueDate > now && !assignment.completed) {
-        const { grade, ...restOfAssignment } = assignment;
-        return restOfAssignment;
-      }
-      return assignment;
-    });
-
-    const upcomingAssignments = cleanedAssignments
-      .filter((a) => new Date(a.dueDate) > new Date())
+    const upcomingAssignments = assignments
+      .filter((a) => new Date(a.dueDate) > new Date() && !a.completed)
       .sort(
         (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
       );
 
-    const studyStats = {};
-    courses.forEach((course) => {
+    const urgentAssignments = upcomingAssignments.filter(
+      (a) =>
+        (new Date(a.dueDate).getTime() - new Date().getTime()) /
+          (1000 * 60 * 60 * 24) <=
+        7
+    );
+
+    const coursePerformance = courses
+      .map((course) => {
+        const courseAssignments = assignments.filter(
+          (a) => a.courseId === course.id
+        );
+        const completedAssignments = courseAssignments.filter(
+          (a) => a.completed
+        );
+        const avgGrade = course.grade ? parseFloat(course.grade) : null;
+        const studyTime = studySessions
+          .filter((s) => s.courseId === course.id)
+          .reduce((sum, s) => sum + s.durationMinutes, 0);
+
+        return {
+          ...course,
+          completionRate:
+            completedAssignments.length / courseAssignments.length || 0,
+          avgGrade,
+          totalStudyTime: studyTime,
+          upcomingCount: courseAssignments.filter(
+            (a) => new Date(a.dueDate) > new Date() && !a.completed
+          ).length,
+        };
+      })
+      .sort((a, b) => {
+        const scoreA = (a.avgGrade || 60) - a.upcomingCount * 5;
+        const scoreB = (b.avgGrade || 60) - b.upcomingCount * 5;
+        return scoreA - scoreB;
+      });
+
+    const studyStats = courses.reduce((stats, course) => {
       const courseStudy = studySessions.filter((s) => s.courseId === course.id);
-      studyStats[course.name] = {
+      stats[course.name] = {
         totalMinutes: courseStudy.reduce(
           (sum, s) => sum + s.durationMinutes,
           0
         ),
         sessions: courseStudy.length,
+        avgSessionLength:
+          courseStudy.length > 0
+            ? courseStudy.reduce((sum, s) => sum + s.durationMinutes, 0) /
+              courseStudy.length
+            : 30,
       };
-    });
+      return stats;
+    }, {});
 
     const prompt = `
-You are looking at REAL student data that has already been provided below. DO NOT ask for more data.
-Your task is to analyze this SPECIFIC student data and provide 5 VERY SHORT, personalized productivity suggestions.
+SMART STUDY PLANNING ANALYSIS - Generate a personalized weekly study schedule
 
-IMPORTANT INSTRUCTIONS:
-- The data below is REAL and COMPLETE - do not say data is missing or needs to be uploaded
-- EACH suggestion must be under 15 words maximum
-- Format as bullet points with • symbol
-- Analyze subject/course patterns across assignments to identify subject-specific trends
-- PRIORITIZE courses with the LOWEST GRADES - give them more detailed attention
-- Every suggestion must directly reference specific course names or assignment titles shown in the data
-- Be specific and actionable - not generic
-- Suggest targeted time allocation based on study patterns
-- Identify subject-specific weaknesses based on grade patterns
-- Do not make assumptions about the content of the courses or assignments unless descriptions are provided
+CURRENT DATE AND TIME CONTEXT:
+• Today is: ${dateContext.todayFormatted}
+• Current day of week: ${dateContext.todayDayName}
+• Today's date: ${dateContext.today}
+• User timezone: ${dateContext.timezone}
 
-KEY DATA INSIGHTS:
-${
-  upcomingAssignments.length > 0
-    ? `Next deadline: ${upcomingAssignments[0].title} for ${getCourseName(
-        upcomingAssignments[0].courseId,
-        courses
-      )} on ${upcomingAssignments[0].dueDate}`
-    : "No upcoming assignments"
-}
+IMPORTANT: When creating the weekly schedule, start from TODAY (${
+      dateContext.todayDayName
+    }) and proceed chronologically through the week. Make sure day names match the actual calendar dates.
 
-COURSES BY PRIORITY (LOWEST GRADES FIRST):
-${courses
-  .sort((a, b) => {
-    const gradeA = a.grade ? parseFloat(a.grade) : 100;
-    const gradeB = b.grade ? parseFloat(b.grade) : 100;
-    return gradeA - gradeB;
-  })
+CURRENT ACADEMIC STATUS:
+${coursePerformance
   .map(
     (course) =>
-      `${course.name}: ${
-        course.grade !== undefined ? course.grade : "No grade"
-      } ${
-        course.grade && parseFloat(course.grade) < 80
-          ? "⚠️ CRITICAL - NEEDS FOCUS"
-          : course.grade && parseFloat(course.grade) < 90
-          ? "⚠️ NEEDS IMPROVEMENT"
-          : ""
-      }`
+      `${course.name}: Grade ${course.avgGrade || "Ungraded"} | ${
+        course.upcomingCount
+      } assignments due | ${Math.round(
+        (studyStats[course.name]?.totalMinutes || 0) / 60
+      )}h total study time`
   )
   .join("\n")}
 
-STUDY PATTERNS BY SUBJECT:
-${Object.entries(studyStats)
-  .map(
-    ([course, stats]) =>
-      `${course}: ${stats.totalMinutes} minutes across ${stats.sessions} sessions`
-  )
-  .join("\n")}
+URGENT PRIORITIES (Due within 7 days from today - ${dateContext.today}):
+${
+  urgentAssignments.length > 0
+    ? urgentAssignments
+        .map((a) => {
+          const daysUntilDue = Math.ceil(
+            (new Date(a.dueDate).getTime() -
+              new Date(dateContext.today).getTime()) /
+              (1000 * 60 * 60 * 24)
+          );
+          return `• ${a.title} (${
+            courses.find((c) => c.id === a.courseId)?.name
+          }) - Due: ${new Date(
+            a.dueDate
+          ).toLocaleDateString()} (${daysUntilDue} days from today)`;
+        })
+        .join("\n")
+    : "No urgent assignments"
+}
 
-SUBJECT-ASSIGNMENT DETAILS:
-${courses
-  .map((course) => {
-    const courseAssignments = cleanedAssignments.filter(
-      (a) => a.courseId === course.id
+UPCOMING ASSIGNMENTS (Next 30 days from today):
+${upcomingAssignments
+  .slice(0, 10)
+  .map((a) => {
+    const daysUntilDue = Math.ceil(
+      (new Date(a.dueDate).getTime() - new Date(dateContext.today).getTime()) /
+        (1000 * 60 * 60 * 24)
     );
-    const completedAssignments = courseAssignments.filter((a) => a.completed);
-    const upcomingAssignments = courseAssignments.filter(
-      (a) => new Date(a.dueDate) > new Date() && !a.completed
-    );
-
-    let result = `${course.name} (${course.grade || "No grade"}): ${
-      courseAssignments.length
-    } assignments, ${completedAssignments.length} completed`;
-
-    if (upcomingAssignments.length > 0) {
-      result += `\n Upcoming assignments: ${upcomingAssignments
-        .map((a) => a.title)
-        .join(", ")}`;
-    }
-
-    return result;
+    return `• ${a.title} (${
+      courses.find((c) => c.id === a.courseId)?.name
+    }) - Due: ${new Date(
+      a.dueDate
+    ).toLocaleDateString()} (${daysUntilDue} days from today)`;
   })
   .join("\n")}
 
-BASED ON THE ABOVE REAL DATA, provide 5 specific, personalized productivity suggestions that reference actual course names and assignments.
+STUDY PATTERNS:
+• Average session length: ${Math.round(
+      studySessions.reduce((sum, s) => sum + s.durationMinutes, 0) /
+        studySessions.length || 30
+    )} minutes
+• Most studied subjects: ${Object.entries(studyStats)
+      .sort(([, a], [, b]) => b.totalMinutes - a.totalMinutes)
+      .slice(0, 3)
+      .map(
+        ([subject, stats]) =>
+          `${subject} (${Math.round(stats.totalMinutes / 60)}h)`
+      )
+      .join(", ")}
+• Study frequency: ${studySessions.length} sessions in recent period
+
+PERFORMANCE ANALYSIS:
+• Highest priority subjects: ${coursePerformance
+      .slice(0, 3)
+      .map((c) => `${c.name} (Grade: ${c.avgGrade || "N/A"})`)
+      .join(", ")}
+
+GENERATE A DETAILED 7-DAY STUDY SCHEDULE starting from TODAY (${
+      dateContext.todayDayName
+    }, ${dateContext.today}) with the following format:
+// ...rest of existing prompt...
 `;
 
-    console.log("AI suggestions prompt:", prompt);
+    console.log("Smart Study Planning prompt:", prompt);
 
-    // const completion = await openai.chat.completions.create({
-    //   // model: "gpt-4-0613",
-    //   model: "o3-2025-04-16",
-    //   messages: [
-    //     {
-    //       role: "system",
-    //       content:
-    //         "You are a highly personalized academic productivity assistant analyzing real student data. Your primary focus is improving performance in LOWER-GRADED SUBJECTS.\n\n" +
-    //         "CRITICAL PRIORITIES:\n" +
-    //         // "- Dedicate at least 3/5 suggestions to the lowest-graded courses\n" +
-    //         "- Always reference specific course names and assignment titles\n" +
-    //         "- Each suggestion must be under 15 words, formatted with • symbol\n" +
-    //         "- Analyze study patterns and suggest targeted time allocation\n" +
-    //         "- Identify subject-specific weaknesses based on grade patterns\n" +
-    //         "- Never claim data is missing; work with what's provided\n" +
-    //         "- Be ultra-specific and actionable - avoid generic advice\n\n" +
-    //         "Your suggestions should address the student's actual course performance, prioritizing improvement where grades are lowest.",
-    //     },
-    //     { role: "user", content: prompt },
-    //   ],
-    //   // max_tokens: 200,
-    //   // max_completion_tokens: 200,
-    //   // temperature: 0.7,
-    // });
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "o3-2025-04-16",
+        messages: [
+          {
+            role: "system",
+            content: `You are an AI-powered Smart Study Planner that creates highly personalized, data-driven weekly study schedules.
 
-    // console.log("AI suggestions response:", completion);
+CORE OBJECTIVES:
+- Analyze REAL student performance data to identify priority areas
+- Generate actionable 7-day study schedules with specific time blocks
+- Prioritize struggling subjects (lower grades) and urgent assignments
+- Create realistic, sustainable study patterns based on historical data
+- Provide specific course names, assignment titles, and time allocations
 
-    // const suggestions = completion.choices[0].message.content;
-    const suggestions =
-      "This would be a paid feature that will be available soon.";
-    res.json({ suggestions });
+RESPONSE FORMAT REQUIREMENTS:
+- Use markdown formatting for structure and readability
+- Include emojis for visual appeal and section separation
+- Provide specific daily time slots (Morning/Afternoon/Evening)
+- Include priority levels (HIGH/MEDIUM/LOW) for each study block
+- Reference actual course names and assignment titles from the data
+- Base recommendations on ACTUAL study patterns, not generic advice
+
+Focus on courses with lower grades and upcoming deadlines. Be specific and actionable.`,
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      });
+
+      console.log("OpenAI Smart Study Planning response:", completion);
+
+      const aiGeneratedPlan = completion.choices[0].message.content;
+
+      const enhancedPlan = `${aiGeneratedPlan}
+
+---
+
+**🎯 QUICK ACTION ITEMS:**
+• Start with ${
+        urgentAssignments.length > 0
+          ? urgentAssignments[0].title
+          : "your most challenging subject"
+      }
+• Focus ${Math.ceil(
+        calculateRecommendedHours(upcomingAssignments, coursePerformance) / 7
+      )} hours per day this week
+• Review lowest-performing subjects: ${coursePerformance
+        .slice(0, 2)
+        .map((c) => c.name)
+        .join(", ")}
+
+**📊 THIS WEEK'S PRIORITIES:**
+${coursePerformance
+  .slice(0, 3)
+  .map(
+    (course) =>
+      `• ${course.name}: ${Math.ceil(
+        course.upcomingCount * 2 + (80 - (course.avgGrade || 70)) / 10
+      )} hours recommended`
+  )
+  .join("\n")}
+`;
+
+      res.json({
+        suggestions: enhancedPlan,
+        metadata: {
+          currentDate: dateContext,
+          totalUpcoming: upcomingAssignments.length,
+          urgentCount: urgentAssignments.length,
+          priorityCourses: coursePerformance.slice(0, 3).map((c) => c.name),
+          recommendedStudyHours: calculateRecommendedHours(
+            upcomingAssignments,
+            coursePerformance
+          ),
+          generatedBy: "OpenAI o3",
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (openaiError) {
+      console.error("OpenAI API error:", openaiError);
+
+      const fallbackPlan = generateDetailedStudyPlan(
+        upcomingAssignments,
+        coursePerformance,
+        studyStats,
+        urgentAssignments,
+        dateContext
+      );
+
+      res.json({
+        suggestions: `⚠️ **AI Study Planner Unavailable - Using Structured Fallback**\n\n${fallbackPlan}\n\n*Note: This is a structured backup plan. AI-generated personalized schedules will be available when the service is restored.*`,
+        metadata: {
+          currentDate: dateContext,
+          totalUpcoming: upcomingAssignments.length,
+          urgentCount: urgentAssignments.length,
+          priorityCourses: coursePerformance.slice(0, 3).map((c) => c.name),
+          recommendedStudyHours: calculateRecommendedHours(
+            upcomingAssignments,
+            coursePerformance
+          ),
+          generatedBy: "Fallback System",
+          timestamp: new Date().toISOString(),
+        },
+      });
+    }
   } catch (err) {
-    console.error("AI suggestions error:", err);
-    res.status(500).json({ error: "AI suggestion failed" });
+    console.error("Smart Study Planning error:", err);
+    res.status(500).json({ error: "Study planning failed" });
   }
 });
+
+function generateDetailedStudyPlan(
+  upcomingAssignments,
+  coursePerformance,
+  studyStats,
+  urgentAssignments,
+  dateContext
+) {
+  const currentDate = new Date(dateContext?.today || new Date());
+  const days = [];
+
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(currentDate);
+    date.setDate(currentDate.getDate() + i);
+    days.push({
+      name: date.toLocaleDateString("en-US", { weekday: "long" }),
+      date: date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      fullDate: date.toISOString().split("T")[0],
+    });
+  }
+  const timeSlots = ["Morning (9-12)", "Afternoon (2-5)", "Evening (7-9)"];
+
+  let plan = "📅 **PERSONALIZED 7-DAY STUDY SCHEDULE**\n\n";
+  plan += `*Starting from ${dateContext?.todayFormatted || "today"}*\n\n`;
+
+  const totalUpcoming = upcomingAssignments.length;
+  const priorityCourses = coursePerformance.slice(0, 3);
+
+  days.forEach((day, dayIndex) => {
+    plan += `**${day.toUpperCase()}**\n`;
+
+    timeSlots.forEach((slot, slotIndex) => {
+      const assignment = upcomingAssignments[dayIndex * 3 + slotIndex];
+      const course = priorityCourses[slotIndex % priorityCourses.length];
+
+      if (assignment || course) {
+        const isUrgent = urgentAssignments.some(
+          (ua) => ua.id === assignment?.id
+        );
+        const priority = isUrgent
+          ? "HIGH"
+          : course?.avgGrade < 80
+          ? "MEDIUM"
+          : "LOW";
+        const duration = Math.max(
+          30,
+          Math.min(120, studyStats[course?.name]?.avgSessionLength || 60)
+        );
+
+        plan += `${slot}: `;
+
+        if (assignment) {
+          plan += `📝 ${assignment.title} (${
+            course?.name || "Course"
+          }) - ${duration}min [${priority}]\n`;
+        } else if (course) {
+          plan += `📚 ${course.name} Review & Practice - ${duration}min [${priority}]\n`;
+        }
+      } else {
+        plan += `${slot}: 🔄 Flexible study time / Review previous topics\n`;
+      }
+    });
+
+    plan += `💡 Daily Focus: ${
+      priorityCourses[dayIndex % priorityCourses.length]?.name ||
+      "General Review"
+    }\n\n`;
+  });
+
+  plan += "**📊 WEEKLY TARGETS:**\n";
+  priorityCourses.forEach((course) => {
+    const recommendedHours = Math.ceil(
+      course.upcomingCount * 2 + (80 - (course.avgGrade || 70)) / 10
+    );
+    plan += `• ${course.name}: ${recommendedHours} hours this week\n`;
+  });
+
+  return plan;
+}
+
+function calculateRecommendedHours(assignments, coursePerformance) {
+  return coursePerformance.reduce((total, course) => {
+    return (
+      total +
+      Math.ceil(course.upcomingCount * 2 + (80 - (course.avgGrade || 70)) / 10)
+    );
+  }, 0);
+}
 
 app.post("/api/assignments", authenticate, async (req, res) => {
   try {
