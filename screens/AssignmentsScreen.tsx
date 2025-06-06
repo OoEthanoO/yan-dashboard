@@ -790,7 +790,10 @@ export default function AssignmentsScreen() {
                 placeholder="e.g. 60"
                 style={styles.input}
                 value={studyDuration}
-                onChangeText={setStudyDuration}
+                onChangeText={(text) => {
+                  const numericInput = text.replace(/[^0-9]/g, "");
+                  setStudyDuration(numericInput);
+                }}
                 keyboardType="numeric"
                 placeholderTextColor="#aaa"
               />
@@ -1584,7 +1587,12 @@ export default function AssignmentsScreen() {
                           value={courseGradeInput}
                           onChangeText={(text) => {
                             const numericInput = text.replace(/[^0-9]/g, "");
-                            setCourseGradeInput(numericInput);
+                            const numValue = parseInt(numericInput, 10);
+                            if (numValue > 100) {
+                              setCourseGradeInput("100");
+                            } else {
+                              setCourseGradeInput(numericInput);
+                            }
                           }}
                           style={styles.courseGradeInput}
                           keyboardType="numeric"
