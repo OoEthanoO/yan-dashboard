@@ -96,6 +96,9 @@ export default function AssignmentsScreen() {
   const [expandedCourses, setExpandedCourses] = useState<
     Record<string, boolean>
   >({});
+  const [expandedAssignments, setExpandedAssignments] = useState<
+    Record<string, boolean>
+  >({});
 
   const [gradeHistoryModalVisible, setGradeHistoryModalVisible] =
     useState(false);
@@ -989,7 +992,13 @@ export default function AssignmentsScreen() {
           data={sortedAssignments}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ gap: 12, paddingBottom: 80, paddingTop: 10 }}
-          renderItem={({ item }) => <AssignmentCard item={item} />}
+          renderItem={({ item }) => (
+            <AssignmentCard
+              item={item}
+              expanded={!!expandedAssignments[item.id]}
+              onToggleExpand={() => toggleAssignmentExpanded(item.id)}
+            />
+          )}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color="#ccc" />
@@ -1034,8 +1043,15 @@ export default function AssignmentsScreen() {
     );
   }
 
-  function AssignmentCard({ item }: { item: Assignment }) {
-    const [expanded, setExpanded] = useState(false);
+  function AssignmentCard({
+    item,
+    expanded,
+    onToggleExpand,
+  }: {
+    item: Assignment;
+    expanded: boolean;
+    onToggleExpand: () => void;
+  }) {
     const [localGradeInput, setLocalGradeInput] = useState<string>("");
     const isOverdue = isDateInPastOrToday(item.dueDate) && !item.completed;
     const courseColor = getColorForCourse(item.courseId);
@@ -1061,7 +1077,7 @@ export default function AssignmentsScreen() {
             />
             <Text style={styles.cardTitleText}>{item.title}</Text>
           </View>
-          <TouchableOpacity onPress={() => setExpanded(!expanded)}>
+          <TouchableOpacity onPress={onToggleExpand}>
             <Ionicons
               name={expanded ? "chevron-up" : "chevron-down"}
               size={20}
@@ -1730,6 +1746,13 @@ export default function AssignmentsScreen() {
     setExpandedCourses((prev) => ({
       ...prev,
       [courseId]: !prev[courseId],
+    }));
+  }
+
+  function toggleAssignmentExpanded(assignmentId: string) {
+    setExpandedAssignments((prev) => ({
+      ...prev,
+      [assignmentId]: !prev[assignmentId],
     }));
   }
 
