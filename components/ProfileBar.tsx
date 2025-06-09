@@ -155,109 +155,116 @@ export default function ProfileBar() {
       </View>
 
       {menuVisible && (
-        <View style={styles.menu}>
+        <>
           <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              setMenuVisible(false);
-              router.push("/account");
-            }}
-          >
-            <Ionicons name="person" size={18} color="#64748b" />
-            <Text style={styles.menuItemText}>Account Settings</Text>
-          </TouchableOpacity>
-
-          {isAdmin && (
+            style={styles.overlay}
+            onPress={() => setMenuVisible(false)}
+            activeOpacity={1}
+          />
+          <View style={styles.menu}>
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
                 setMenuVisible(false);
-                router.push("/admin");
+                router.push("/account");
               }}
             >
-              <Ionicons name="shield-checkmark" size={18} color="#ef4444" />
-              <Text
-                style={[
-                  styles.menuItemText,
-                  { color: "#ef4444", fontWeight: "600" },
-                ]}
-              >
-                Admin Panel
-              </Text>
+              <Ionicons name="person" size={18} color="#64748b" />
+              <Text style={styles.menuItemText}>Account Settings</Text>
             </TouchableOpacity>
-          )}
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              setMenuVisible(false);
-              router.push("/issues");
-            }}
-          >
-            <Ionicons
-              name="information-circle-outline"
-              size={18}
-              color="#64748b"
-            />
-            <Text style={styles.menuItemText}>Known Issues</Text>
-          </TouchableOpacity>
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setMenuVisible(false);
+                  router.push("/admin");
+                }}
+              >
+                <Ionicons name="shield-checkmark" size={18} color="#ef4444" />
+                <Text
+                  style={[
+                    styles.menuItemText,
+                    { color: "#ef4444", fontWeight: "600" },
+                  ]}
+                >
+                  Admin Panel
+                </Text>
+              </TouchableOpacity>
+            )}
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              setMenuVisible(false);
-              router.push("/privacy");
-            }}
-          >
-            <Ionicons name="shield-outline" size={18} color="#64748b" />
-            <Text style={styles.menuItemText}>Privacy</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push("/issues");
+              }}
+            >
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color="#64748b"
+              />
+              <Text style={styles.menuItemText}>Known Issues</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              setMenuVisible(false);
-              router.push("/version-history");
-            }}
-          >
-            <Ionicons name="git-branch" size={18} color="#64748b" />
-            <Text style={styles.menuItemText}>Version History</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push("/privacy");
+              }}
+            >
+              <Ionicons name="shield-outline" size={18} color="#64748b" />
+              <Text style={styles.menuItemText}>Privacy</Text>
+            </TouchableOpacity>
 
-          {/* Add Ko-fi donation option */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              setMenuVisible(false);
-              const kofiUrl = "https://ko-fi.com/ethanyanxu";
-              if (Platform.OS === "web") {
-                window.open(kofiUrl, "_blank");
-              } else {
-                WebBrowser.openBrowserAsync(kofiUrl);
-              }
-            }}
-          >
-            <Ionicons name="cafe" size={18} color="#29abe0" />
-            <Text style={styles.menuItemText}>Support Development</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                router.push("/version-history");
+              }}
+            >
+              <Ionicons name="git-branch" size={18} color="#64748b" />
+              <Text style={styles.menuItemText}>Version History</Text>
+            </TouchableOpacity>
 
-          <View style={styles.menuDivider} />
+            {/* Add Ko-fi donation option */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                const kofiUrl = "https://ko-fi.com/ethanyanxu";
+                if (Platform.OS === "web") {
+                  window.open(kofiUrl, "_blank");
+                } else {
+                  WebBrowser.openBrowserAsync(kofiUrl);
+                }
+              }}
+            >
+              <Ionicons name="cafe" size={18} color="#29abe0" />
+              <Text style={styles.menuItemText}>Support Development</Text>
+            </TouchableOpacity>
 
-          <View style={styles.menuVersionContainer}>
-            <Text style={styles.versionText}>{APP_FULL_VERSION}</Text>
+            <View style={styles.menuDivider} />
+
+            <View style={styles.menuVersionContainer}>
+              <Text style={styles.versionText}>{APP_FULL_VERSION}</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.menuItem, styles.logoutItem]}
+              onPress={async () => {
+                setMenuVisible(false);
+                await logout();
+              }}
+            >
+              <Ionicons name="log-out" size={18} color="#ef4444" />
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={[styles.menuItem, styles.logoutItem]}
-            onPress={async () => {
-              setMenuVisible(false);
-              await logout();
-            }}
-          >
-            <Ionicons name="log-out" size={18} color="#ef4444" />
-            <Text style={styles.logoutText}>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
+        </>
       )}
     </View>
   );
@@ -370,5 +377,22 @@ const styles = StyleSheet.create({
     color: "#ef4444",
     fontSize: 12,
     fontWeight: "700",
+  },
+  overlay: {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    ...Platform.select({
+      native: {
+        position: "absolute",
+        width: 10000,
+        height: 10000,
+        top: -5000,
+        left: -5000,
+      },
+    }),
   },
 });
