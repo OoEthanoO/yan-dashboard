@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -29,6 +30,20 @@ export default function KnownIssuesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+
+  const handleSendFeedback = async () => {
+    setIsSendingFeedback(true);
+    try {
+      await ApiClient.sendFeedback({ text: feedbackText });
+      console.log("Feedback sent successfully");
+    } catch (error) {
+      console.error("Failed to send feedback:", error);
+    } finally {
+      setIsSendingFeedback(false);
+    }
+  };
 
   const fetchIssuesData = async () => {
     try {
@@ -210,9 +225,26 @@ export default function KnownIssuesScreen() {
                 If you've encountered an issue not listed here or have feature
                 suggestions, please let us know through the feedback form.
               </Text>
-              <TouchableOpacity style={styles.feedbackButton}>
-                <Ionicons name="send" size={16} color="#fff" />
-                <Text style={styles.feedbackButtonText}>Send Feedback</Text>
+              <TextInput
+                style={styles.feedbackInput}
+                placeholder="Enter your feedback..."
+                placeholderTextColor="#aaa"
+                value={feedbackText}
+                onChangeText={setFeedbackText}
+              />
+              <TouchableOpacity
+                style={styles.feedbackButton}
+                onPress={handleSendFeedback}
+                disabled={isSendingFeedback}
+              >
+                {isSendingFeedback ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={16} color="#fff" />
+                    <Text style={styles.feedbackButtonText}>Send Feedback</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </>
@@ -385,6 +417,19 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 14,
+  },
+  feedbackInput: {
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#111827",
+    marginBottom: 16,
+    width: "100%",
+    minHeight: 80,
+    textAlignVertical: "top",
   },
   idContainer: {
     marginTop: 8,
