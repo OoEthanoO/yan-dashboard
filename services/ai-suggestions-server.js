@@ -169,7 +169,28 @@ VersionHistorySchema.pre("findOneAndUpdate", function (next) {
   next();
 });
 
+const FeedbackSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+    userEmail: {
+      type: String,
+      required: false,
+    },
+    text: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+  },
+  { timestamps: true }
+);
+
 const Issue = mongoose.model("Issue", IssueSchema);
+const Feedback = mongoose.model("Feedback", FeedbackSchema);
 
 const User = mongoose.model("User", UserSchema);
 const Assignment = mongoose.model("Assignment", AssignmentSchema);
@@ -1398,6 +1419,47 @@ app.delete(
     }
   }
 );
+
+app.post("/api/feedback", authenticate, async (req, res) => {
+  const { text } = req.body;
+  if (!text || typeof text !== "string" || text.trim() === "") {
+    return res.status(400).json({
+      success: false,
+      error: "Feedback text is required and cannot be empty.",
+    });
+  }
+  try {
+    const feedbackData = { text };
+    if (req.user) {
+      feedbackData.userId = req.user._id;
+      feedbackData.userEmail = req.user.email;
+    }
+    const newFeedback = new Feedback(feedbackData);
+    await newFeedback.save();
+    console.log(
+      "Feedback saved from user:",
+      req.user ? req.user._id : "Anonymous"
+    );
+    res
+      .status(201)
+      .json({ success: true, message: "Feedback saved successfully." });
+  } catch (dbError) {
+    console.error("Error saving feedback:", dbError);
+    res.status(500).json({ success: false, error: "Failed to save feedback." });
+  }
+});
+
+app.get("/api/admin/feedback", authenticateAdmin, async (req, res) => {
+  try {
+    const allFeedback = await Feedback.find({}).sort({ createdAt: -1 });
+    res.status(200).json({ success: true, feedback: allFeedback });
+  } catch (error) {
+    console.error("Error fetching feedback for admin:", error);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch feedback." });
+  }
+});
 
 function getCourseName(courseId, courses) {
   const course = courses.find((c) => c.id === courseId);

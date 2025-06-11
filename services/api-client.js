@@ -404,6 +404,8 @@ export class ApiClient {
     return await this.request(`/admin/version-history/${id}`, "DELETE");
   }
 
+  static async getAdminFeedback() {}
+
   static async sendFeedback(feedbackData) {
     return await this.request("/feedback", "POST", feedbackData);
   }

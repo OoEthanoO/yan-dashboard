@@ -32,16 +32,33 @@ export default function KnownIssuesScreen() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState({
+    message: "",
+    type: "",
+  });
 
   const handleSendFeedback = async () => {
     setIsSendingFeedback(true);
+    setFeedbackStatus({ message: "", type: "" });
     try {
       await ApiClient.sendFeedback({ text: feedbackText });
       console.log("Feedback sent successfully");
+      setFeedbackStatus({
+        message: "Feedback sent successfully!",
+        type: "success",
+      });
+      setFeedbackText("");
     } catch (error) {
       console.error("Failed to send feedback:", error);
+      setFeedbackStatus({
+        message: "Failed to send feedback. Please try again.",
+        type: "error",
+      });
     } finally {
       setIsSendingFeedback(false);
+      setTimeout(() => {
+        setFeedbackStatus({ message: "", type: "" });
+      }, 3000);
     }
   };
 
@@ -246,6 +263,18 @@ export default function KnownIssuesScreen() {
                   </>
                 )}
               </TouchableOpacity>
+              {feedbackStatus.message ? (
+                <Text
+                  style={[
+                    styles.feedbackStatusText,
+                    feedbackStatus.type === "success"
+                      ? styles.feedbackStatusSuccess
+                      : styles.feedbackStatusError,
+                  ]}
+                >
+                  {feedbackStatus.message}
+                </Text>
+              ) : null}
             </View>
           </>
         )}
@@ -430,6 +459,20 @@ const styles = StyleSheet.create({
     width: "100%",
     minHeight: 80,
     textAlignVertical: "top",
+  },
+  feedbackStatusText: {
+    marginTop: 16,
+    fontSize: 14,
+    textAlign: "center",
+    paddingHorizontal: 10,
+  },
+  feedbackStatusSuccess: {
+    color: "#10b981",
+    fontWeight: "500",
+  },
+  feedbackStatusError: {
+    color: "#ef4444",
+    fontWeight: "500",
   },
   idContainer: {
     marginTop: 8,
