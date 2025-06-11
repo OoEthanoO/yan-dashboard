@@ -38,6 +38,15 @@ type VersionHistory = {
   updatedAt: string;
 };
 
+type AdminFeedbackItem = {
+  _id: string;
+  text: string;
+  userId?: string;
+  userEmail?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type Stats = {
   totalUsers: number;
   totalAssignments: number;
@@ -45,6 +54,23 @@ type Stats = {
   totalStudySessions: number;
   totalIssues: number;
   totalVersions: number;
+};
+
+const formatAdminTimestamp = (timestamp: string): string => {
+  if (!timestamp) return "N/A";
+  try {
+    const date = new Date(timestamp);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch (e) {
+    return "Invalid Date";
+  }
 };
 
 export default function AdminPanel() {
@@ -55,12 +81,13 @@ export default function AdminPanel() {
   const [adminCheckLoading, setAdminCheckLoading] = useState(true);
   const [lastAdminCheck, setLastAdminCheck] = useState<Date>(new Date());
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "issues" | "versions"
+    "dashboard" | "issues" | "versions" | "feedback"
   >("dashboard");
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [versions, setVersions] = useState<VersionHistory[]>([]);
+  const [feedback, setFeedbacks] = useState<AdminFeedbackItem[]>([]);
 
   const [issueModalVisible, setIssueModalVisible] = useState(false);
   const [versionModalVisible, setVersionModalVisible] = useState(false);
@@ -223,16 +250,27 @@ export default function AdminPanel() {
 
     try {
       setLoading(true);
-      const [statsData, issuesData, versionsData] = await Promise.all([
-        ApiClient.getAdminStats(),
-        ApiClient.getAdminIssues(),
-        ApiClient.getAdminVersionHistory(),
-      ]);
+      const [statsData, issuesData, versionsData, feedbackResponse] =
+        await Promise.all([
+          ApiClient.getAdminStats(),
+          ApiClient.getAdminIssues(),
+          ApiClient.getAdminVersionHistory(),
+          ApiClient.getAdminFeedback(),
+        ]);
 
       if (isMountedRef.current) {
         setStats(statsData);
         setIssues(issuesData);
         setVersions(versionsData);
+        if (feedbackResponse && feedbackResponse.success) {
+          setFeedbacks(feedbackResponse.feedback);
+        } else {
+          setFeedbacks([]);
+          console.error(
+            "Failed to fetch feedback or feedback not in expected format:",
+            feedbackResponse
+          );
+        }
       }
     } catch (error) {
       console.error("Failed to fetch admin data:", error);
@@ -538,6 +576,24 @@ export default function AdminPanel() {
             Versions
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === "feedback" && styles.activeTab]}
+          onPress={() => setActiveTab("feedback")}
+        >
+          <Ionicons
+            name="chatbubble-ellipses-outline"
+            size={20}
+            color={activeTab === "feedback" ? "#ef4444" : "#64748b"}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "feedback" && styles.activeTabText,
+            ]}
+          >
+            Feedback
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -705,6 +761,42 @@ export default function AdminPanel() {
                     </View>
                   </View>
                 ))}
+              </View>
+            )}
+
+            {activeTab === "feedback" && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>User Feedback</Text>
+                {feedback.length === 0 && !loading ? (
+                  <View style={styles.emptyStateContainer}>
+                    <Ionicons
+                      name="chatbubbles-outline"
+                      size={48}
+                      color="#cbd5e1"
+                    />
+                    <Text style={styles.emptyStateText}>
+                      No feedback has been submitted yet.
+                    </Text>
+                  </View>
+                ) : (
+                  feedback.map((item) => (
+                    <View key={item._id} style={styles.itemCard}>
+                      <Text style={styles.itemDescription}>{item.text}</Text>
+                      <View style={styles.feedbackMetaContainer}>
+                        <Text style={styles.feedbackUser}>
+                          {item.userEmail
+                            ? `User: ${item.userEmail}`
+                            : item.userId
+                            ? `User ID: ${item.userId}`
+                            : "User: Anonymous"}
+                        </Text>
+                        <Text style={styles.feedbackTimestamp}>
+                          Submitted: {formatAdminTimestamp(item.createdAt)}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
               </View>
             )}
           </>
@@ -1427,5 +1519,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
+  },
+  emptyStateContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  emptyStateText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#64748b",
+    textAlign: "center",
+  },
+  feedbackMetaContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+  },
+  feedbackUser: {
+    fontSize: 12,
+    color: "#64748b",
+    fontWeight: "500",
+  },
+  feedbackTimestamp: {
+    fontSize: 12,
+    color: "#94a3b8",
   },
 });
