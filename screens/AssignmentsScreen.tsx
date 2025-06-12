@@ -398,6 +398,95 @@ export default function AssignmentsScreen() {
     setModalVisible(false);
   }
 
+  function renderAnalyticsTab() {
+    const totalCourses = courses.length;
+    const totalAssignments = assignments.length;
+
+    const completedAssignments = assignments.filter((a) => a.completed).length;
+    const assignmentCompletionRate =
+      totalAssignments > 0
+        ? (completedAssignments / totalAssignments) * 100
+        : 0;
+
+    const totalStudyMinutes = sessions.reduce(
+      (sum, session) => sum + session.durationMinutes,
+      0
+    );
+    const totalStudyHours = totalStudyMinutes / 60;
+
+    return (
+      <ScrollView contentContainerStyle={styles.analyticsContainer}>
+        <Text style={styles.analyticsSectionTitle}>
+          Overall Academic Overview
+        </Text>
+        <View style={styles.analyticsMetricsGrid}>
+          <View style={styles.analyticsMetricCard}>
+            <Text style={styles.analyticsMetricLabel}>Active Courses</Text>
+            <Text style={styles.analyticsMetricValue}>{totalCourses}</Text>
+          </View>
+          <View style={styles.analyticsMetricCard}>
+            <Text style={styles.analyticsMetricLabel}>Total Assignments</Text>
+            <Text style={styles.analyticsMetricValue}>{totalAssignments}</Text>
+          </View>
+          <View style={styles.analyticsMetricCard}>
+            <Text style={styles.analyticsMetricLabel}>Completion Rate</Text>
+            <Text style={styles.analyticsMetricValue}>
+              {assignmentCompletionRate.toFixed(1)}%
+            </Text>
+          </View>
+          <View style={styles.analyticsMetricCard}>
+            <Text style={styles.analyticsMetricLabel}>Total Study Time</Text>
+            <Text style={styles.analyticsMetricValue}>
+              {totalStudyHours.toFixed(1)} hrs
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.analyticsSectionTitle, { marginTop: 24 }]}>
+          Course Grade Trends
+        </Text>
+        {courses.length > 0 ? (
+          courses.map((course) => (
+            <TouchableOpacity
+              key={course.id}
+              style={styles.analyticsCourseItem}
+              onPress={() => console.log("View grade trend for:", course.name)}
+            >
+              <View
+                style={[
+                  styles.courseColorIndicator,
+                  {
+                    backgroundColor: getColorForCourse(course.id),
+                    height: "auto",
+                    alignSelf: "stretch",
+                    marginRight: 12,
+                  },
+                ]}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.analyticsCourseName}>{course.name}</Text>
+                <Text style={styles.analyticsCourseSubtext}>
+                  Current Grade:{" "}
+                  {course.grade !== undefined ? `${course.grade}%` : "N/A"}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={styles.emptyStateCard}>
+            <Text style={styles.emptyStateText}>
+              No courses available to display grade trends.
+            </Text>
+            <Text style={styles.emptyStateSubtext}>
+              Add courses in the 'Courses' tab.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -490,6 +579,29 @@ export default function AssignmentsScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                activeTab === "analytics" && styles.activeTab,
+              ]}
+              onPress={() => setActiveTab("analytics")}
+            >
+              <Ionicons
+                name="stats-chart"
+                size={18}
+                color={activeTab === "analytics" ? "#3b82f6" : "#888"}
+              />
+              {!isNarrowScreen && (
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === "analytics" && styles.activeTabText,
+                  ]}
+                >
+                  Analytics
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -498,6 +610,7 @@ export default function AssignmentsScreen() {
         {activeTab === "study" && renderStudyLogTab()}
         {activeTab === "courses" && renderCoursesTab()}
         {activeTab === "insights" && renderInsightsTab()}
+        {activeTab === "analytics" && renderAnalyticsTab()}
 
         {/* Add button (tab specific) */}
         {activeTab === "assignments" && (
@@ -3123,5 +3236,79 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#374151",
     marginLeft: 12,
+  },
+  analyticsContainer: {
+    padding: 16,
+    paddingBottom: 40,
+  },
+  analyticsSectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 16,
+  },
+  analyticsMetricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  analyticsMetricCard: {
+    flex: 1,
+    minWidth: "46%",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  analyticsMetricLabel: {
+    fontSize: 13,
+    color: "#64748b",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  analyticsMetricValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  analyticsCourseItem: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  analyticsCourseName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  analyticsCourseSubtext: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  emptyStateCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+    minHeight: 100,
   },
 });
