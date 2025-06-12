@@ -1,12 +1,13 @@
 import { ApiClient } from "@/services/api-client";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -36,6 +37,35 @@ export default function KnownIssuesScreen() {
     message: "",
     type: "",
   });
+  const [showResolved, setShowResolved] = useState(false);
+
+  const sortIssues = (issues: IssueItem[]): IssueItem[] => {
+    const statusOrder: Record<IssueItem["status"], number> = {
+      "in-progress": 0,
+      open: 1,
+      resolved: 2,
+    };
+    const priorityOrder: Record<IssueItem["priority"], number> = {
+      high: 0,
+      medium: 1,
+      low: 2,
+    };
+
+    return [...issues].sort((a, b) => {
+      if (statusOrder[a.status] < statusOrder[b.status]) return -1;
+      if (statusOrder[a.status] > statusOrder[b.status]) return 1;
+
+      if (priorityOrder[a.priority] < priorityOrder[b.priority]) return -1;
+      if (priorityOrder[a.priority] > priorityOrder[b.priority]) return 1;
+
+      const idA = parseInt(a.id, 16);
+      const idB = parseInt(b.id, 16);
+      if (idA > idB) return -1;
+      if (idA < idB) return 1;
+
+      return 0;
+    });
+  };
 
   const handleSendFeedback = async () => {
     setIsSendingFeedback(true);
@@ -70,7 +100,7 @@ export default function KnownIssuesScreen() {
 
       if (response) {
         setKnownIssues(response.issues || []);
-        setPlannedFeatures(response.features || []);
+        setPlannedFeatures(sortIssues(response.features || []));
         setLastUpdated(new Date().toLocaleString());
       }
     } catch (error) {
@@ -120,6 +150,18 @@ export default function KnownIssuesScreen() {
     }
   };
 
+  const filteredKnownIssues = useMemo(() => {
+    return knownIssues.filter(
+      (issue) => showResolved || issue.status !== "resolved"
+    );
+  }, [knownIssues, showResolved]);
+
+  const filteredPlannedFeatures = useMemo(() => {
+    return plannedFeatures.filter(
+      (feature) => showResolved || feature.status !== "resolved"
+    );
+  }, [plannedFeatures, showResolved]);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -158,6 +200,19 @@ export default function KnownIssuesScreen() {
               </Text>
             )}
 
+            <View style={styles.filterContainer}>
+              <Text style={styles.filterLabel}>Show Resolved</Text>
+              <Switch
+                trackColor={{ false: "#767577", true: "#81b0ff" }}
+                thumbColor={showResolved ? "#3b82f6" : "#f4f3f4"}
+                ios_backgroundColor="#3e3e3e"
+                onValueChange={() =>
+                  setShowResolved((previousState) => !previousState)
+                }
+                value={showResolved}
+              />
+            </View>
+
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Ionicons
@@ -176,7 +231,7 @@ export default function KnownIssuesScreen() {
                   </Text>
                 </View>
               ) : (
-                knownIssues.map((issue) => (
+                filteredKnownIssues.map((issue) => (
                   <View key={issue.id} style={styles.issueCard}>
                     <View style={styles.issueHeader}>
                       <View style={styles.statusContainer}>
@@ -212,11 +267,13 @@ export default function KnownIssuesScreen() {
               {plannedFeatures.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Text style={styles.emptyStateText}>
-                    No planned features at this time
+                    {showResolved
+                      ? "No planned features"
+                      : "No open or in-progress features"}
                   </Text>
                 </View>
               ) : (
-                plannedFeatures.map((feature) => (
+                filteredPlannedFeatures.map((feature) => (
                   <View key={feature.id} style={styles.issueCard}>
                     <View style={styles.issueHeader}>
                       <View style={styles.statusContainer}>
@@ -319,6 +376,26 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: "#64748b",
+  },
+  filterContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#334155",
   },
   lastUpdatedText: {
     textAlign: "center",

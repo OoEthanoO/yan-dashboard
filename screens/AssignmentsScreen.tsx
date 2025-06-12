@@ -527,7 +527,6 @@ export default function AssignmentsScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Assignment Modal */}
         <Modal visible={modalVisible} animationType="none" transparent>
           <View style={styles.modalBg}>
             <View style={styles.modalCard}>
