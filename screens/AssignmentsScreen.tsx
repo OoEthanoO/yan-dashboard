@@ -118,6 +118,9 @@ export default function AssignmentsScreen() {
     subjectDifficulty: {},
     productivityTrends: [],
   });
+  const [expandedAnalyticsCourses, setExpandedAnalyticsCourses] = useState<
+    Record<string, boolean>
+  >({});
 
   const isIOS = Platform.OS === "ios";
 
@@ -267,6 +270,13 @@ export default function AssignmentsScreen() {
         </View>
       </ScrollView>
     );
+  }
+
+  function toggleAnalyticsCourseExpanded(courseId: string) {
+    setExpandedAnalyticsCourses((prev) => ({
+      ...prev,
+      [courseId]: !prev[courseId],
+    }));
   }
 
   async function fetchAISuggestions() {
@@ -447,39 +457,109 @@ export default function AssignmentsScreen() {
         </Text>
         {courses.length > 0 ? (
           courses.map((course) => (
-            <TouchableOpacity
-              key={course.id}
-              style={styles.analyticsCourseItem}
-              onPress={() => console.log("View grade trend for:", course.name)}
-            >
-              <View
-                style={[
-                  styles.courseColorIndicator,
-                  {
-                    backgroundColor: getColorForCourse(course.id),
-                    height: "auto",
-                    alignSelf: "stretch",
-                    marginRight: 12,
-                  },
-                ]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.analyticsCourseName}>{course.name}</Text>
-                <Text style={styles.analyticsCourseSubtext}>
-                  Current Grade:{" "}
-                  {course.grade !== undefined ? `${course.grade}%` : "N/A"}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
-            </TouchableOpacity>
+            <View key={course.id}>
+              <TouchableOpacity
+                style={styles.analyticsCourseItem}
+                onPress={() => toggleAnalyticsCourseExpanded(course.id)}
+              >
+                <View
+                  style={[
+                    styles.courseColorIndicator,
+                    {
+                      backgroundColor: getColorForCourse(course.id),
+                      height: "auto",
+                      alignSelf: "stretch",
+                      marginRight: 12,
+                    },
+                  ]}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.analyticsCourseName}>{course.name}</Text>
+                  <Text style={styles.analyticsCourseSubtext}>
+                    Current Grade:{" "}
+                    {course.grade !== undefined ? `${course.grade}%` : "N/A"}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={
+                    expandedAnalyticsCourses[course.id]
+                      ? "chevron-up"
+                      : "chevron-forward"
+                  }
+                  size={20}
+                  color="#9ca3af"
+                />
+              </TouchableOpacity>
+
+              {/* Show GradeTrendChart when expanded */}
+              {expandedAnalyticsCourses[course.id] && (
+                <View style={styles.analyticsTrendContainer}>
+                  <GradeTrendChart
+                    course={course}
+                    assignments={assignments.filter(
+                      (a) => a.courseId === course.id && a.grade !== undefined
+                    )}
+                  />
+                </View>
+              )}
+            </View>
           ))
         ) : (
           <View style={styles.emptyStateCard}>
             <Text style={styles.emptyStateText}>
               No courses available to display grade trends.
             </Text>
-            <Text style={styles.emptyStateSubtext}>
-              Add courses in the 'Courses' tab.
+          </View>
+        )}
+
+        {/* Study Habits section */}
+        <Text style={[styles.analyticsSectionTitle, { marginTop: 24 }]}>
+          Study Habits
+        </Text>
+        {courses.length > 0 ? (
+          courses.map((course) => {
+            const courseStudyTime = sessions
+              .filter((s) => s.courseId === course.id)
+              .reduce((sum, session) => sum + session.durationMinutes, 0);
+
+            const maxStudyTime = Math.max(
+              ...courses.map((c) =>
+                sessions
+                  .filter((s) => s.courseId === c.id)
+                  .reduce((sum, session) => sum + session.durationMinutes, 0)
+              ),
+              60 // Minimum for visualization purposes
+            );
+
+            return (
+              <View key={`study-${course.id}`} style={styles.studyHabitItem}>
+                <View style={styles.studyHabitInfo}>
+                  <Text style={styles.studyHabitCourseName}>{course.name}</Text>
+                  <Text style={styles.studyHabitTime}>
+                    {courseStudyTime} minutes
+                  </Text>
+                </View>
+                <View style={styles.studyHabitBarContainer}>
+                  <View
+                    style={[
+                      styles.studyHabitBar,
+                      {
+                        width: `${Math.min(
+                          100,
+                          (courseStudyTime / maxStudyTime) * 100
+                        )}%`,
+                        backgroundColor: getColorForCourse(course.id),
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            );
+          })
+        ) : (
+          <View style={styles.emptyStateCard}>
+            <Text style={styles.emptyStateText}>
+              No courses available to analyze study habits.
             </Text>
           </View>
         )}
@@ -3310,5 +3390,54 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
     minHeight: 100,
+  },
+  analyticsTrendContainer: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  studyHabitItem: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: "column",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  studyHabitInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  studyHabitCourseName: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  studyHabitTime: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6b7280",
+  },
+  studyHabitBarContainer: {
+    height: 8,
+    backgroundColor: "#f1f5f9",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  studyHabitBar: {
+    height: 8,
+    borderRadius: 4,
   },
 });
