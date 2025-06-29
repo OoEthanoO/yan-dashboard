@@ -5,6 +5,7 @@ import { useStudySessions } from "@/context/StudySessionsContext";
 import { ApiClient } from "@/services/api-client";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -29,6 +30,9 @@ import DatePicker, {
 import { Assignment, useAssignments } from "../context/AssignmentsContext";
 
 export default function AssignmentsScreen() {
+  const router = useRouter();
+  const [showNavMenu, setShowNavMenu] = useState(false);
+
   const {
     courses,
     addCourse,
@@ -572,7 +576,39 @@ export default function AssignmentsScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Student Dashboard</Text>
+            <View>
+              <TouchableOpacity
+                style={styles.navDropdownButton}
+                onPress={() => setShowNavMenu(!showNavMenu)}
+              >
+                <Text style={styles.headerTitle}>Student Dashboard</Text>
+                <Ionicons
+                  name={showNavMenu ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#111827"
+                />
+              </TouchableOpacity>
+              {showNavMenu && (
+                <View style={styles.navDropdownMenu}>
+                  <TouchableOpacity
+                    style={[styles.navMenuItem, styles.navMenuItemActive]}
+                    onPress={() => setShowNavMenu(false)}
+                  >
+                    <Text style={styles.navMenuItemText}>Dashboard</Text>
+                    <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.navMenuItem}
+                    onPress={() => {
+                      setShowNavMenu(false);
+                      router.push("/notes");
+                    }}
+                  >
+                    <Text style={styles.navMenuItemText}>Notes</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
             <ProfileBar />
           </View>
           <View style={styles.tabBar}>
@@ -2178,6 +2214,42 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "700",
     color: "#111827",
+  },
+  navDropdownButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  navDropdownMenu: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 2000,
+    width: 200,
+    padding: 8,
+  },
+  navMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  navMenuItemActive: {
+    backgroundColor: "#f0f9ff",
+  },
+  navMenuItemText: {
+    fontSize: 15,
+    color: "#374151",
+    fontWeight: "500",
   },
   tabBar: {
     flexDirection: "row",
