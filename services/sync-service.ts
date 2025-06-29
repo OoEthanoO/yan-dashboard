@@ -384,10 +384,10 @@ export const SyncService = {
         })
       );
 
-      console.log(
-        "JSON.stringify(processedResponseAssignments)",
-        JSON.stringify(processedResponseAssignments)
-      );
+      // console.log(
+      //   "JSON.stringify(processedResponseAssignments)",
+      //   JSON.stringify(processedResponseAssignments)
+      // );
 
       storageUpdates.push(
         AsyncStorage.setItem(
