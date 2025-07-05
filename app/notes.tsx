@@ -1,5 +1,6 @@
 import ProfileBar from "@/components/ProfileBar";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Platform,
@@ -43,6 +44,8 @@ const dummyNotes = [
 type Note = (typeof dummyNotes)[0];
 
 export default function NotesScreen() {
+  const router = useRouter();
+  const [showNavMenu, setShowNavMenu] = useState(false);
   const [notes, setNotes] = useState(dummyNotes);
   const [selectedNote, setSelectedNote] = useState<Note | null>(notes[0]);
   const { width } = useWindowDimensions();
@@ -50,6 +53,24 @@ export default function NotesScreen() {
 
   const handleSelectNote = (note: Note) => {
     setSelectedNote(note);
+  };
+
+  const handleUpdateNote = (field: "title" | "content", value: string) => {
+    if (!selectedNote) return;
+
+    const updatedNotes = notes.map((note) => {
+      if (note.id === selectedNote.id) {
+        return {
+          ...note,
+          [field]: value,
+          lastModified: "Just now",
+        };
+      }
+      return note;
+    });
+
+    setNotes(updatedNotes);
+    setSelectedNote((prev) => (prev ? { ...prev, [field]: value } : null));
   };
 
   const handleNewNote = () => {
@@ -109,6 +130,7 @@ export default function NotesScreen() {
           <TextInput
             style={styles.detailTitleInput}
             value={selectedNote.title}
+            onChangeText={(text) => handleUpdateNote("title", text)}
             placeholder="Note Title"
             placeholderTextColor="#aaa"
           />
@@ -116,6 +138,7 @@ export default function NotesScreen() {
             <TextInput
               style={styles.detailContentInput}
               value={selectedNote.content}
+              onChangeText={(text) => handleUpdateNote("content", text)}
               multiline
               placeholder="Start writing your note..."
               placeholderTextColor="#aaa"
@@ -139,7 +162,39 @@ export default function NotesScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Notes</Text>
+            <View>
+              <TouchableOpacity
+                style={styles.navDropdownButton}
+                onPress={() => setShowNavMenu(!showNavMenu)}
+              >
+                <Text style={styles.headerTitle}>Notes</Text>
+                <Ionicons
+                  name={showNavMenu ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#111827"
+                />
+              </TouchableOpacity>
+              {showNavMenu && (
+                <View style={styles.navDropdownMenu}>
+                  <TouchableOpacity
+                    style={styles.navMenuItem}
+                    onPress={() => {
+                      setShowNavMenu(false);
+                      router.push("/");
+                    }}
+                  >
+                    <Text style={styles.navMenuItemText}>Dashboard</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.navMenuItem, styles.navMenuItemActive]}
+                    onPress={() => setShowNavMenu(false)}
+                  >
+                    <Text style={styles.navMenuItemText}>Notes</Text>
+                    <Ionicons name="checkmark" size={16} color="#3b82f6" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
             <ProfileBar />
           </View>
         </View>
@@ -186,6 +241,42 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "700",
     color: "#111827",
+  },
+  navDropdownButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  navDropdownMenu: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 2000,
+    width: 200,
+    padding: 8,
+  },
+  navMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  navMenuItemActive: {
+    backgroundColor: "#f0f9ff",
+  },
+  navMenuItemText: {
+    fontSize: 15,
+    color: "#374151",
+    fontWeight: "500",
   },
   mainContent: {
     flex: 1,

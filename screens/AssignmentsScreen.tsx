@@ -516,7 +516,6 @@ export default function AssignmentsScreen() {
           </View>
         )}
 
-        {/* Study Habits section */}
         <Text style={[styles.analyticsSectionTitle, { marginTop: 24 }]}>
           Study Habits
         </Text>
@@ -532,7 +531,7 @@ export default function AssignmentsScreen() {
                   .filter((s) => s.courseId === c.id)
                   .reduce((sum, session) => sum + session.durationMinutes, 0)
               ),
-              60 // Minimum for visualization purposes
+              60
             );
 
             return (
@@ -581,7 +580,7 @@ export default function AssignmentsScreen() {
                 style={styles.navDropdownButton}
                 onPress={() => setShowNavMenu(!showNavMenu)}
               >
-                <Text style={styles.headerTitle}>Student Dashboard</Text>
+                <Text style={styles.headerTitle}>Dashboard</Text>
                 <Ionicons
                   name={showNavMenu ? "chevron-up" : "chevron-down"}
                   size={20}
