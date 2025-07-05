@@ -43,6 +43,165 @@ const dummyNotes = [
 
 type Note = (typeof dummyNotes)[0];
 
+const NoteList = ({
+  notes,
+  selectedNote,
+  handleSelectNote,
+  handleNewNote,
+  isWideScreen,
+}: {
+  notes: Note[];
+  selectedNote: Note | null;
+  handleSelectNote: (note: Note) => void;
+  handleNewNote: () => void;
+  isWideScreen: boolean;
+}) => (
+  <View
+    style={[
+      styles.noteListContainer,
+      isWideScreen && styles.noteListContainerWide,
+    ]}
+  >
+    <View style={styles.noteListHeader}>
+      <Text style={styles.noteListTitle}>All Notes</Text>
+      <TouchableOpacity style={styles.newNoteButton} onPress={handleNewNote}>
+        <Ionicons name="add" size={20} color="#fff" />
+        <Text style={styles.newNoteButtonText}>New Note</Text>
+      </TouchableOpacity>
+    </View>
+    <ScrollView>
+      {notes.map((note) => (
+        <TouchableOpacity
+          key={note.id}
+          style={[
+            styles.noteItem,
+            selectedNote?.id === note.id && styles.selectedNoteItem,
+          ]}
+          onPress={() => handleSelectNote(note)}
+        >
+          <Text style={styles.noteTitle}>{note.title}</Text>
+          <Text style={styles.noteSnippet} numberOfLines={2}>
+            {note.content}
+          </Text>
+          <View style={styles.noteFooter}>
+            <Text style={styles.noteCourse}>{note.course}</Text>
+            <Text style={styles.noteDate}>{note.lastModified}</Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  </View>
+);
+
+const NoteDetail = ({
+  selectedNote,
+  handleUpdateNote,
+}: {
+  selectedNote: Note | null;
+  handleUpdateNote: (field: "title" | "content", value: string) => void;
+}) => {
+  const [content, setContent] = useState(selectedNote?.content || "");
+  const textInputRef = React.useRef<TextInput>(null);
+
+  React.useEffect(() => {
+    setContent(selectedNote?.content || "");
+  }, [selectedNote]);
+
+  const handleContentChange = (newText: string) => {
+    const lines = newText.split("\n");
+    const oldLines = content.split("\n");
+    let transformedText = newText;
+
+    if (lines.length >= oldLines.length) {
+      const lastLine = lines[lines.length - 1];
+      if (lastLine.trim() === "-") {
+        transformedText = newText.substring(0, newText.length - 1) + "• ";
+      } else if (lastLine.trim() === "*") {
+        transformedText = newText.substring(0, newText.length - 1) + "• ";
+      }
+    }
+    setContent(transformedText);
+    handleUpdateNote("content", transformedText);
+  };
+
+  const handleKeyPress = (e: any) => {
+    if (Platform.OS !== "web") return;
+
+    if (e.nativeEvent.key === "Tab" && selectedNote) {
+      e.preventDefault();
+      const { selectionStart, selectionEnd } = e.target as any;
+      const lines = content.split("\n");
+      const lineIndex =
+        content.substring(0, selectionStart).split("\n").length - 1;
+
+      if (e.nativeEvent.shiftKey) {
+        if (lines[lineIndex].startsWith("  ")) {
+          lines[lineIndex] = lines[lineIndex].substring(2);
+        }
+      } else {
+        lines[lineIndex] = "  " + lines[lineIndex];
+      }
+
+      const newValue = lines.join("\n");
+      setContent(newValue);
+      handleUpdateNote("content", newValue);
+    } else if (e.nativeEvent.key === "Enter" && selectedNote) {
+      const { selectionStart } = e.target as any;
+      const currentLine =
+        content.substring(0, selectionStart).split("\n").pop() || "";
+      const indentMatch = currentLine.match(/^(\s*)/);
+      const bulletMatch = currentLine.match(/^(\s*[•-]\s)/);
+
+      if (bulletMatch) {
+        e.preventDefault();
+        const indent = indentMatch ? indentMatch[1] : "";
+        const newContent =
+          content.substring(0, selectionStart) +
+          `\n${indent}• ` +
+          content.substring(selectionStart);
+        setContent(newContent);
+        handleUpdateNote("content", newContent);
+      }
+    }
+  };
+
+  return (
+    <View style={styles.noteDetailContainer}>
+      {selectedNote ? (
+        <>
+          <TextInput
+            style={styles.detailTitleInput}
+            value={selectedNote.title}
+            onChangeText={(text) => handleUpdateNote("title", text)}
+            placeholder="Note Title"
+            placeholderTextColor="#d1d5db"
+          />
+          <View style={styles.detailContentWrapper}>
+            <TextInput
+              ref={textInputRef}
+              style={styles.detailContentInput}
+              value={content}
+              onChangeText={handleContentChange}
+              multiline
+              placeholder="Start writing your note... Type '-' or '*' and a space for a bullet point."
+              placeholderTextColor="#9ca3af"
+              onKeyPress={handleKeyPress}
+            />
+          </View>
+        </>
+      ) : (
+        <View style={styles.emptyState}>
+          <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
+          <Text style={styles.emptyStateText}>Select a note to view</Text>
+          <Text style={styles.emptyStateSubtext}>
+            Or create a new one to get started
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+};
+
 export default function NotesScreen() {
   const router = useRouter();
   const [showNavMenu, setShowNavMenu] = useState(false);
@@ -84,78 +243,6 @@ export default function NotesScreen() {
     setNotes([newNote, ...notes]);
     setSelectedNote(newNote);
   };
-
-  const NoteList = () => (
-    <View
-      style={[
-        styles.noteListContainer,
-        isWideScreen && styles.noteListContainerWide,
-      ]}
-    >
-      <View style={styles.noteListHeader}>
-        <Text style={styles.noteListTitle}>All Notes</Text>
-        <TouchableOpacity style={styles.newNoteButton} onPress={handleNewNote}>
-          <Ionicons name="add" size={20} color="#fff" />
-          <Text style={styles.newNoteButtonText}>New Note</Text>
-        </TouchableOpacity>
-      </View>
-      <ScrollView>
-        {notes.map((note) => (
-          <TouchableOpacity
-            key={note.id}
-            style={[
-              styles.noteItem,
-              selectedNote?.id === note.id && styles.selectedNoteItem,
-            ]}
-            onPress={() => handleSelectNote(note)}
-          >
-            <Text style={styles.noteTitle}>{note.title}</Text>
-            <Text style={styles.noteSnippet} numberOfLines={2}>
-              {note.content}
-            </Text>
-            <View style={styles.noteFooter}>
-              <Text style={styles.noteCourse}>{note.course}</Text>
-              <Text style={styles.noteDate}>{note.lastModified}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </View>
-  );
-
-  const NoteDetail = () => (
-    <View style={styles.noteDetailContainer}>
-      {selectedNote ? (
-        <>
-          <TextInput
-            style={styles.detailTitleInput}
-            value={selectedNote.title}
-            onChangeText={(text) => handleUpdateNote("title", text)}
-            placeholder="Note Title"
-            placeholderTextColor="#aaa"
-          />
-          <ScrollView style={styles.detailContentWrapper}>
-            <TextInput
-              style={styles.detailContentInput}
-              value={selectedNote.content}
-              onChangeText={(text) => handleUpdateNote("content", text)}
-              multiline
-              placeholder="Start writing your note..."
-              placeholderTextColor="#aaa"
-            />
-          </ScrollView>
-        </>
-      ) : (
-        <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={64} color="#cbd5e1" />
-          <Text style={styles.emptyStateText}>Select a note to view</Text>
-          <Text style={styles.emptyStateSubtext}>
-            Or create a new one to get started
-          </Text>
-        </View>
-      )}
-    </View>
-  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -201,13 +288,31 @@ export default function NotesScreen() {
         <View style={styles.mainContent}>
           {isWideScreen ? (
             <>
-              <NoteList />
-              <NoteDetail />
+              <NoteList
+                notes={notes}
+                selectedNote={selectedNote}
+                handleSelectNote={handleSelectNote}
+                handleNewNote={handleNewNote}
+                isWideScreen={isWideScreen}
+              />
+              <NoteDetail
+                selectedNote={selectedNote}
+                handleUpdateNote={handleUpdateNote}
+              />
             </>
           ) : selectedNote ? (
-            <NoteDetail />
+            <NoteDetail
+              selectedNote={selectedNote}
+              handleUpdateNote={handleUpdateNote}
+            />
           ) : (
-            <NoteList />
+            <NoteList
+              notes={notes}
+              selectedNote={selectedNote}
+              handleSelectNote={handleSelectNote}
+              handleNewNote={handleNewNote}
+              isWideScreen={isWideScreen}
+            />
           )}
         </View>
       </View>
@@ -381,9 +486,10 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 28,
     color: "#334155",
     textAlignVertical: "top",
+    fontFamily: Platform.OS === "web" ? "Menlo" : "monospace",
   },
   emptyState: {
     flex: 1,
