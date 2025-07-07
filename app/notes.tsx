@@ -112,14 +112,26 @@ const NoteDetail = ({
     const oldLines = content.split("\n");
     let transformedText = newText;
 
-    if (lines.length >= oldLines.length) {
+    if (lines.length >= oldLines.length && newText.length > content.length) {
       const lastLine = lines[lines.length - 1];
-      if (lastLine.trim() === "-") {
-        transformedText = newText.substring(0, newText.length - 1) + "• ";
-      } else if (lastLine.trim() === "*") {
-        transformedText = newText.substring(0, newText.length - 1) + "• ";
+
+      const lastChar = newText[newText.length - 1];
+      if (lastChar === " ") {
+        const trimmedLine = lastLine.trim();
+        if (trimmedLine === "-" || trimmedLine === "*") {
+          const dashIndex = lastLine.indexOf(trimmedLine);
+          if (dashIndex !== -1) {
+            const newLine =
+              lastLine.substring(0, dashIndex) +
+              "  •" +
+              lastLine.substring(dashIndex + 1);
+            lines[lines.length - 1] = newLine;
+            transformedText = lines.join("\n");
+          }
+        }
       }
     }
+
     setContent(transformedText);
     handleUpdateNote("content", transformedText);
   };
@@ -139,25 +151,71 @@ const NoteDetail = ({
           lines[lineIndex] = lines[lineIndex].substring(2);
         }
       } else {
-        lines[lineIndex] = "  " + lines[lineIndex];
+        lines[lineIndex] = "\t" + lines[lineIndex];
       }
 
       const newValue = lines.join("\n");
       setContent(newValue);
       handleUpdateNote("content", newValue);
+    } else if (e.nativeEvent.key === "Backspace" && selectedNote) {
+      const { selectionStart, selectionEnd } = e.target as any;
+
+      if (selectionStart === selectionEnd) {
+        const lines = content.split("\n");
+        const lineIndex =
+          content.substring(0, selectionStart).split("\n").length - 1;
+        const currentLine = lines[lineIndex];
+        const cursorPosInLine =
+          selectionStart -
+          content.substring(0, selectionStart).lastIndexOf("\n") -
+          1;
+
+        if (
+          currentLine.match(/^(\s*)  • $/) &&
+          cursorPosInLine === currentLine.length
+        ) {
+          e.preventDefault();
+          const indent = currentLine.match(/^(\s*)/)?.[1] || "";
+          const adjustedIndent = indent.length >= 2 ? indent.substring(2) : "";
+          lines[lineIndex] = adjustedIndent + "\t";
+
+          const newValue = lines.join("\n");
+          setContent(newValue);
+          handleUpdateNote("content", newValue);
+
+          setTimeout(() => {
+            const newCursorPos =
+              content.substring(0, selectionStart).lastIndexOf("\n") +
+              1 +
+              adjustedIndent.length +
+              1;
+
+            if (Platform.OS === "web") {
+              const target = e.target as HTMLTextAreaElement;
+              if (target && target.setSelectionRange) {
+                target.setSelectionRange(newCursorPos, newCursorPos);
+              }
+            } else if (textInputRef.current) {
+              textInputRef.current.setNativeProps({
+                selection: { start: newCursorPos, end: newCursorPos },
+              });
+            }
+          }, 0);
+        }
+      }
     } else if (e.nativeEvent.key === "Enter" && selectedNote) {
       const { selectionStart } = e.target as any;
       const currentLine =
         content.substring(0, selectionStart).split("\n").pop() || "";
       const indentMatch = currentLine.match(/^(\s*)/);
-      const bulletMatch = currentLine.match(/^(\s*[•-]\s)/);
+      const bulletMatch = currentLine.match(/^(\s*  • )/);
 
       if (bulletMatch) {
         e.preventDefault();
         const indent = indentMatch ? indentMatch[1] : "";
         const newContent =
           content.substring(0, selectionStart) +
-          `\n${indent}• ` +
+          `\n${indent}  • ` +
           content.substring(selectionStart);
         setContent(newContent);
         handleUpdateNote("content", newContent);
@@ -490,6 +548,10 @@ const styles = StyleSheet.create({
     color: "#334155",
     textAlignVertical: "top",
     fontFamily: Platform.OS === "web" ? "Menlo" : "monospace",
+    ...(Platform.OS === "web" && {
+      tabSize: 4,
+      MozTabSize: 4,
+    }),
   },
   emptyState: {
     flex: 1,
